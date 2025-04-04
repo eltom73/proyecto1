@@ -1,1 +1,1 @@
-hola = 1
+print("Este es el cliente")
