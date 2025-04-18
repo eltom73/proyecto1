@@ -1,0 +1,16 @@
+{"CLIENTES": {
+    "AlexisSanchez@chile.com": {"contraseña": "AlexisSanchez", "nombre": "AlexisSanchez","transacciones":[], "cambios de contraseña": []}, 
+    "ArturoVidal@chile.com": {"contraseña": "Arturo123", "nombre": "ArturoVidal","transacciones":[], "cambios de contraseña": []},
+    "Charles@chile.com": {"contraseña": "UniversidadDeChile", "nombre": "CharlesAranguiz","transacciones":[], "cambios de contraseña": []}
+},
+"EJECUTIVOS": {
+    "Ejecutivo1@tc5g.com": {"contraseña": "Ejecutivo123", "nombre": "Lionel Messi","n°clientesAtendiendo":0},
+    "Ejecutivo2@tc5g.com": {"contraseña": "Ejecutivo1234", "nombre": "CR7","n°clientesAtendiendo":0},
+    "Ejecutivo3@tc5g.com": {"contraseña": "Ejecutivo12345", "nombre": "NeymarJR","n°clientesAtendiendo":0}
+}, 
+"Productos": {
+    "Charizard Ex" : {"stock": 20, "precio": 3},
+    "Lucario Ex":{"stock": 10, "precio": 2.5}
+},
+"Ingresados": []
+}
