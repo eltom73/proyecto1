@@ -13,28 +13,32 @@ import funciones_cliente as fc
 
 
 # Variables globales
-FILEPATH = "database.json"
-CLIENTS_LIST = [] #Lista de Clientes en línea
-EXECUTIVE_LIST = [] #Lista de Ejecutivos en línea
-WAITING_QUEVE = [] #Lista de Clientes en espera de algún ejecutivo
-mutex = threading.Lock() # Este impone el mutex
+FILEPATH = "database.json" #Ruta al archivo JSON principal (database.json). Todo se guarda ahí.
+CLIENTS_LIST = [] #Lista de sockets (conexiones) de los clientes que están conectados.
+EXECUTIVE_LIST = [] #Lista de sockets de los ejecutivos conectados.
+WAITING_QUEVE = [] #Lista de Clientes en espera de algún ejecutivo.
+mutex = threading.Lock() # Lock para evitar que dos hilos escriban el JSON al mismo tiempo.
 
 def Log_in(accion): #Función que registra en la database columna "Ingresados" el tiempo cuando un cliente/ejecutivo se conecta al servidor
-    with mutex:
+    with mutex: #para que nadie más escriba mientras esto está en curso.
         with open(FILEPATH, "r+") as file: #abrimos la database como file, tal que se pueda leer y escribir sobre este
             data = json.load(file)
-            data["Ingresados"].append({"timestamp": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),"acción":accion})
-            file.seek(0)
-            json.dump(data, file, indent=4)
-            file.truncate()
-def AutentificarUsuarios(email, contraseña, tipo):
+            data["Ingresados"].append({
+                "timestamp": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                "acción":accion
+                })
+            file.seek(0) # Mueve el cursor de escritura/lectura al inicio del archivo. Sino, se quedaría donde se terminó de escribir
+            json.dump(data, file, indent=4) #Guarda (escribe) el diccionario data en el archivo file, pero lo convierte a formato JSON válido.
+            file.truncate() #Para borrar cualquier contenido sobrante del archivo original.
+
+def AutentificarUsuarios(email, contraseña, tipo_de_usuario):
     with mutex:
         with open(FILEPATH, "r") as file:
             data = json.load(file)
-            usuarios = data.get(tipo, {})
+            usuarios = data.get(tipo_de_usuario, {})
             if email in usuarios: #busca el email ingresado por el cliente en la base de datos
                 if usuarios[email]["contraseña"] == contraseña: #verifica que la contraseña ingresada por el 
-                    return True, usuarios[email]["nombre"]
+                    return True, usuarios[email]["nombre"] #si coincide, se retora True y el nombre de usuario
                 else:
                     return False, "Contraseña incorrecta"
             return False, "Usuario No Encontrado"
@@ -56,17 +60,17 @@ def menu_cliente(sock,email):
         opcion = sock.recv(1024).decode().strip()
 
         if opcion == "1":
-            cambiar_contrasena(sock, email)
+            fc.cambiar_contrasena(sock, email)
         elif opcion == "2":
-            historial_de_operaciones(sock, email)
+            fc.historial_de_operaciones(sock, email)
         elif opcion == "3":
-            comprar_cartas(sock, email)
+            fc.comprar_cartas(sock, email)
         elif opcion == "4":
-            devolver_cartas(sock, email)
+            fc.devolver_cartas(sock, email)
         elif opcion == "5":
-            confirmar_envio(sock, email)
+            fc.confirmar_envio(sock, email)
         elif opcion == "6":
-            contactar_ejecutivo(sock, email)
+            fc.contactar_ejecutivo(sock, email)
         elif opcion == "7":
             sock.send("Sesión finalizada. ¡Hasta luego!\n".encode())
             break
