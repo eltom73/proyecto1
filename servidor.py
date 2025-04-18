@@ -7,196 +7,128 @@ import socket
 import threading
 import json
 from datetime import datetime
-
-# Importamos las funciones del cliente
 import funciones_cliente as fc
+import time 
 
 
 # Variables globales
-FILEPATH = "database.json" #Ruta al archivo JSON principal (database.json). Todo se guarda ahí.
+FILEPATH = "database_clientes.json" #Ruta al archivo JSON principal (database.json). Todo se guarda ahí.
 CLIENTS_LIST = [] #Lista de sockets (conexiones) de los clientes que están conectados.
 EXECUTIVE_LIST = [] #Lista de sockets de los ejecutivos conectados.
 WAITING_QUEVE = [] #Lista de Clientes en espera de algún ejecutivo.
 mutex = threading.Lock() # Lock para evitar que dos hilos escriban el JSON al mismo tiempo.
 
-def Log_in(accion): #Función que registra en la database columna "Ingresados" el tiempo cuando un cliente/ejecutivo se conecta al servidor
-    with mutex: #para que nadie más escriba mientras esto está en curso.
-        with open(FILEPATH, "r+") as file: #abrimos la database como file, tal que se pueda leer y escribir sobre este
-            data = json.load(file)
-            data["Ingresados"].append({
-                "timestamp": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                "acción":accion
-                })
-            file.seek(0) # Mueve el cursor de escritura/lectura al inicio del archivo. Sino, se quedaría donde se terminó de escribir
-            json.dump(data, file, indent=4) #Guarda (escribe) el diccionario data en el archivo file, pero lo convierte a formato JSON válido.
-            file.truncate() #Para borrar cualquier contenido sobrante del archivo original.
-
-def AutentificarUsuarios(email, contraseña, tipo_de_usuario):
-    with mutex:
-        with open(FILEPATH, "r") as file:
-            data = json.load(file)
-            usuarios = data.get(tipo_de_usuario, {})
-            if email in usuarios: #busca el email ingresado por el cliente en la base de datos
-                if usuarios[email]["contraseña"] == contraseña: #verifica que la contraseña ingresada por el 
-                    return True, usuarios[email]["nombre"] #si coincide, se retora True y el nombre de usuario
-                else:
-                    return False, "Contraseña incorrecta"
-            return False, "Usuario No Encontrado"
-
-def menu_cliente(sock,email):
-    while True:
-        menu = (
-            "\n--- MENÚ CLIENTE ---\n"
-            "1. Cambiar contraseña\n"
-            "2. Ver historial\n"
-            "3. Comprar carta\n"
-            "4. Devolver carta\n"
-            "5. Confirmar envío\n"
-            "6. Hablar con ejecutivo\n"
-            "7. Salir\n"
-            "Elige una opción: "
-        )
-        sock.send(menu.encode())
-        opcion = sock.recv(1024).decode().strip()
-
-        if opcion == "1":
-            fc.cambiar_contrasena(sock, email)
-        elif opcion == "2":
-            fc.historial_de_operaciones(sock, email)
-        elif opcion == "3":
-            fc.comprar_cartas(sock, email)
-        elif opcion == "4":
-            fc.devolver_cartas(sock, email)
-        elif opcion == "5":
-            fc.confirmar_envio(sock, email)
-        elif opcion == "6":
-            fc.contactar_ejecutivo(sock, email)
-        elif opcion == "7":
-            sock.send("Sesión finalizada. ¡Hasta luego!\n".encode())
-            break
-        else:
-            sock.send("Opción inválida. Intenta nuevamente.\n".encode())
 
 
+# -------------------- función auxiliar --------------------
+def atender_cliente_login(sock):
+    """Autentica a un cliente y entrega el control al menú de fc."""
+    logueado = False  # Bandera para saber si el cliente pasó el login completo
 
-
-# Funcion de cliente
-def cliente(sock):
-    global CLIENTS_LIST, WAITING_QUEVE
     try:
+        sock.send((
+            "¡Bienvenido a la plataforma de servicio al cliente de la tienda TC5G!\n"
+            "Para autenticarse ingrese su mail y contraseña.\n"
+        ).encode())
 
-        # Proceso de Identificación del cliente o ejecutivo
-        sock.send("¡Bienvenido a la plataforma de servicio al cliente de la tienda TC5G! Para autenticarse ingrese su mail y contraseña: ".encode())
-        email = sock.recv(1024).decode().strip() #esperamos respuesta sobre email
+        while True:
+            sock.send("Email: ".encode())
+            email = sock.recv(1024).decode().strip()
+            print(f"[LOGIN] Cliente ingresó email: {email}")
+
+            if not email:
+                sock.send("No se ingresó un correo. Intente nuevamente.\n".encode())
+                continue  # vuelve a pedir email
+
+            # Abrir base de datos
+            with mutex:
+                with open(FILEPATH, "r") as f:
+                    data = json.load(f)
+
+            clientes = data.get("CLIENTES", {})
+            print(f"[DEBUG] clientes: {clientes}")
+
+            # Verifica si el correo está registrado
+            if email not in clientes:
+                sock.send("Correo no registrado. Intente nuevamente.\n".encode())
+                continue  # vuelve a pedir email
+
+            # El correo es válido, se obtiene el usuario asociado
+            usuario = clientes[email]
+            break  # sale del bucle
+
+        # Pide contraseña si el correo fue válido
         sock.send("Contraseña: ".encode())
-        contraseña = sock.recv(1024).decode().strip()#esperamos respuesta sobre contraseña
+        password = sock.recv(1024).decode().strip()
+        print(f"[LOGIN] Cliente ingresó contraseña: {password}")
+        print(f"[DEBUG] usuario: {usuario}")
+        print(f"[DEBUG] type(usuario): {type(usuario)}")
 
-        autenticacion, nombre = AutentificarUsuarios(email, contraseña, "CLIENTES") #llamamos a la función AutentificarUsuarios para ver si es un cliente (TRUE)
-        es_ejecutivo = False #caso base = no es ejecutivo
-        if not autenticacion: #Si al preguntar si es que es un cliente devuelve False, preguntamos si es ejecutivo
-            autenticacion, nombre = AutentificarUsuarios(email, contraseña, "EJECUTIVOS")
-            es_ejecutivo = True #Si es ejecutivo, se setea a True
-        if not autenticacion: #No es ni cliente ni ejecutivo, damos error de inicio de sesión
-            sock.send(f"Asistente: {"Error de inicio de sesión"}\n".encode())
+        if usuario["contrasena"] != password:
+            sock.send("Error: clave incorrecta. Conexión cerrada.\n".encode())
+            time.sleep(0.1)
             sock.close()
             return
-        #Conexión exitosa como cliente o como ejecutivo
-        with mutex:
-            if es_ejecutivo: 
-                EXECUTIVE_LIST.append((sock, email))
-                Log_in(f"Ejecutivo {nombre} conectado")
-            else:
-                CLIENTS_LIST.append((sock, email)) 
-                Log_in(f"Cliente {nombre} conectado")
-        sock.send(f"Asistente: ¡Bienvenido {nombre}! ¿En qué te podemos ayudar?\n".encode())
 
-        if es_ejecutivo:
-            Ejecutivo(sock, email, nombre)
-        else:
-            Ejecutivo(sock, email, nombre)
+        nombre = usuario["nombre"]
+        sock.send(f"¡Bienvenido/a {nombre}!\n".encode())
+
+        # Registrar acción
+        with mutex:
+            with open(FILEPATH, "r+") as f:
+                data = json.load(f)
+                data["Ingresados"].append({
+                    "timestamp": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                    "acción": f"Cliente {nombre} conectado"
+                })
+                f.seek(0)
+                json.dump(data, f, indent=4)
+                f.truncate()
+
+        with mutex:
+            CLIENTS_LIST.append((sock, email))
+
+        logueado = True  # ← El cliente pasó el login
+
+        # Entrar al menú del cliente
+        fc.menu_cliente(sock, email, nombre)
+
     except Exception as e:
-        print(f"Error en Cliente: {e}")
-
-    finally: 
-        with mutex:
-            if es_ejecutivo and (sock, email) in EXECUTIVE_LIST:
-                EXECUTIVE_LIST.remove((sock, email))
-                Log_in(f"Ejecutivo {nombre} desconectado")
-            elif (sock, email)
-
-
-
-##########################################################################################################################
-        if nombre in names: # Si esta en la lista de clientes
-            sock.send('Asistente: Yo a ti te conozco...'.encode())
-            sock.send('¿A quien le sumas 1 galleta? \n Escribe ::exit para salir'.encode())
-            print(f'Cliente {nombre} se ha conectado.')
-
-            while True:
-                try:
-                    data = sock.recv(1024).decode()
-                except:
-                    break
-
-                if data == "::exit":
-                    sock.send("Chao cuidate!".encode())
-                    
-                    # Se modifican las variables globales usando un mutex.
-                    with mutex:
-                        CLIENTS_LIST.remove(sock)
-                    sock.close()
-                    print(f'Cliente {nombre} se ha desconectado.')
-                    break
-
-                elif data in names:
-                    #muestra los pedidos de los clientes
-                    print(f'El cliente {nombre} le da una galleta a {data}')
-                    with mutex:
-                        with open(FILEPATH) as file:
-                            database = json.load(file)
-                            database[data] +=1
-                            amount = database[data]
-                            file.close()
-                        with open(FILEPATH, "w") as file:
-                            json.dump(database, file)
-                            file.close()
-                        
-                    sock.send(f'Gracias a ti, {data} ahora tiene {amount} galleta(s)'.encode())
-                    
-                else:
-                    sock.send('No conozco esa persona :c, intenta con otro nombre'.encode())
-            return None
-
-        elif nombre == '::exit':
-            with mutex:
-                CLIENTS_LIST.remove(sock)
+        print("Error en login:", e)
+        sock.close()
+    finally:
+        # Solo cerrar si el login fue exitoso o si no entró al menú
+        if not logueado:
             sock.close()
-            return None
+        else:
+            with mutex:
+                if (sock, email) in CLIENTS_LIST:
+                    CLIENTS_LIST.remove((sock, email))
+            sock.close()
 
-        else: 
-            sock.send('No te conozco y no hablo con desconocidos :C \nVuelve a intentarlo o ::exit para salir.'.encode())
+
+
+
+
+
 
     
 if __name__ == "__main__":
-    # Se configura el servidor para que corra localmente y en el puerto 8889.
-    HOST = '127.0.0.1'
-    PORT = 8889
-
-    # Se crea el socket y se instancia en las variables anteriores.
+    # Configurar servidor
+    HOST, PORT = "127.0.0.1", 8889
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind((HOST, PORT))
     s.listen()
+    print(f"Servidor TC5G escuchando en {HOST}:{PORT}")
 
-    # Se buscan clientes que quieran conectarse.
+    # Bucle principal: aceptar clientes
     while True:
-
-        # Se acepta la conexion de un cliente
         conn, addr = s.accept()
-        CLIENTS_LIST.append(conn)
+        print(f"[SERVIDOR] Conexión desde {addr}")
 
-        # Se manda el mensaje de bienvenida
-        conn.send("Bienvenid@ a mi clicker :D \n Te conozco? (dime tu nombre)".encode())
-
-        # Se inicia el thread del cliente
-        client_thread = threading.Thread(target=cliente, args=(conn,))
-        client_thread.start()
+        # Lanza un hilo que hace login y luego menú de cliente
+        threading.Thread(
+            target=atender_cliente_login,  # <- función que autentica
+            args=(conn,),                  # pasa el socket
+            daemon=True
+        ).start()

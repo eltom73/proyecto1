@@ -1,35 +1,41 @@
 import socket
-import sys
 import threading
+import sys
 
-def leer(sock):
-    while True:
-        try: #
-            res = sock.recv(1024).decode()   #I ntenta recibir un mensaje del servidor.
-        except: # en except se coloca lo que se hace si es que el try falla
-            sock.close()
-            break
-        print(res)
-        if res == 'No te cacho :/': break
-    return None
+HOST, PORT = "127.0.0.1", 8889
 
-# Se asume que el servidor esta corriendo localmente en el puerto 8889.
-HOST = '127.0.0.1'
-PORT = 8889
-
-# Se crea el socket y se conecta al servidor.
+# Crear el socket
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.connect((HOST, PORT))
-print("Conectado al servidor")
 
-reading_thread = threading.Thread(target=leer, args=(s,))
+# Función para escuchar mensajes del servidor
+def recibir_respuestas(sock): #función que corre en un hilo aparte. Lee y muestra todos los mensajes que el servidor envía.
+    while True:
+        try:
+            mensaje = sock.recv(4096).decode() #mensaje contiene el texto que el servidor acaba de enviar.
+            if not mensaje: #Si mensaje está vacío… significa que el servidor cerró el socket, pues recv(...) devuelve una cadena vacía ("").
+                print("\n[Conexión cerrada por el servidor]") #Entonces esto detecta que el servidor cerró la conexión y el cliente debe terminar su bucle.
+                break
+            print(mensaje, end="", flush=True) #Si el mensaje sí existe, se muestra en pantalla
+            
+
+            if "Hasta luego" in mensaje or "Conexión cerrada" in mensaje: # Si ve alguna de esas frases, también termina el bucle y deja de escuchar.
+                break
+        except: #Esto captura cualquier error inesperado (por ejemplo, si el socket explota) 
+            break
+
+# Iniciar el hilo que escucha
+reading_thread = threading.Thread(target=recibir_respuestas, args=(s,))
 reading_thread.start()
 
-# Se revisa la entrada estandar y se envia lo que ingrese le usuarie.
-for line in sys.stdin: #lee línea por línea lo que se escribe en consola
-    msg = line.rstrip() #quita el salto de línea final (\n), dejando solo el texto.
-    s.send(msg.encode()) #codifica el mensaje como bytes y lo envía al servidor.
-    if msg == "::exit": #si el mensaje es ::exit
-        res = s.recv(1024).decode() #Espera una última respuesta del servidor con recv().
-        break #Luego rompe el bucle.
-s.close() #finalmente se cierra el socket
+# Enviar mensajes escritos por el usuario
+try:
+    for linea in sys.stdin:
+        mensaje = linea.strip()
+        s.send(mensaje.encode())
+        if mensaje == "::exit":
+            break
+except Exception as e:
+    print("Error en cliente:", e)
+finally:
+    s.close()

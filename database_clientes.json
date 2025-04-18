@@ -1,16 +1,85 @@
-{"CLIENTES": {
-    "AlexisSanchez@chile.com": {"contraseña": "AlexisSanchez", "nombre": "AlexisSanchez","transacciones":[], "cambios de contraseña": []}, 
-    "ArturoVidal@chile.com": {"contraseña": "Arturo123", "nombre": "ArturoVidal","transacciones":[], "cambios de contraseña": []},
-    "Charles@chile.com": {"contraseña": "UniversidadDeChile", "nombre": "CharlesAranguiz","transacciones":[], "cambios de contraseña": []}
-},
-"EJECUTIVOS": {
-    "Ejecutivo1@tc5g.com": {"contraseña": "Ejecutivo123", "nombre": "Lionel Messi","n°clientesAtendiendo":0},
-    "Ejecutivo2@tc5g.com": {"contraseña": "Ejecutivo1234", "nombre": "CR7","n°clientesAtendiendo":0},
-    "Ejecutivo3@tc5g.com": {"contraseña": "Ejecutivo12345", "nombre": "NeymarJR","n°clientesAtendiendo":0}
-}, 
-"Productos": {
-    "Charizard Ex" : {"stock": 20, "precio": 3},
-    "Lucario Ex":{"stock": 10, "precio": 2.5}
-},
-"Ingresados": []
+{
+    "CLIENTES": {
+        "AlexisSanchez@chile.com": {
+            "contrasena": "1234",
+            "nombre": "AlexisSanchez",
+            "transacciones": [
+                {
+                    "tipo": "compra",
+                    "producto": "Charizard Ex",
+                    "fecha": "2025-04-18",
+                    "estado": "pendiente"
+                },
+                {
+                    "tipo": "devolucion",
+                    "producto": "Lucario Ex",
+                    "fecha": "2025-04-19",
+                    "estado": "aceptada"
+                }
+            ],
+            "cambios de contrasena": [
+                {
+                    "fecha": "2025-04-18 03:16:45",
+                    "nueva": "1234"
+                }
+            ]
+        },
+        "ArturoVidal@chile.com": {
+            "contrasena": "Arturo123",
+            "nombre": "ArturoVidal",
+            "transacciones": [],
+            "cambios de contrasena": []
+        },
+        "Charles@chile.com": {
+            "contrasena": "UniversidadDeChile",
+            "nombre": "CharlesAranguiz",
+            "transacciones": [],
+            "cambios de contrasena": []
+        }
+    },
+    "EJECUTIVOS": {
+        "Ejecutivo1@tc5g.com": {
+            "contrasena": "Ejecutivo123",
+            "nombre": "Lionel Messi",
+            "n\u00c2\u00b0clientesAtendiendo": 0
+        },
+        "Ejecutivo2@tc5g.com": {
+            "contrasena": "Ejecutivo1234",
+            "nombre": "CR7",
+            "n\u00c2\u00b0clientesAtendiendo": 0
+        },
+        "Ejecutivo3@tc5g.com": {
+            "contrasena": "Ejecutivo12345",
+            "nombre": "NeymarJR",
+            "n\u00c2\u00b0clientesAtendiendo": 0
+        }
+    },
+    "Productos": {
+        "Charizard Ex": {
+            "stock": 20,
+            "precio": 3
+        },
+        "Lucario Ex": {
+            "stock": 10,
+            "precio": 2.5
+        }
+    },
+    "Ingresados": [
+        {
+            "timestamp": "18/04/2025 02:16:21",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "18/04/2025 02:19:02",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "18/04/2025 03:15:00",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "18/04/2025 03:16:23",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        }
+    ]
 }
