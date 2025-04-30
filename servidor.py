@@ -15,16 +15,6 @@ import time
 FILEPATH = "database_clientes.json"
 mutex = threading.Lock() # Este impone el mutex
 
-# === NUEVO diccionario de estado, protegido por mutex =========
-STATE = {
-    "clientes_linea":   {},   # email -> socket
-    "ejecutivos_linea": {},   # email -> socket
-    "clientes_espera":  [],   # [(sock, email), …]
-    "conexiones":       {}    # sock_ejecutivo -> sock_cliente
-}
-# ===============================================================
-
-
 
 
 #def AutentificarUsuarios(email, contraseña, tipo):

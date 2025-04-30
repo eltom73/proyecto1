@@ -3,7 +3,6 @@ Funciones del menú
 """
 
 import json
-from servidor import FILEPATH, mutex, STATE
 import socket
 import threading    
 from shared_state import FILEPATH, mutex, STATE
@@ -364,35 +363,25 @@ def contactar_ejecutivo(sock, email, nombre):
     """
     El cliente se pone en la cola de espera para un ejecutivo.
     """
-
-    print(f"[DEBUG] Se llamó contactar_ejecutivo con email={email}, nombre={nombre}")
+    print(f"[INFO] Cliente {nombre} solicitó hablar con un ejecutivo")
 
     with mutex:
-        # Mostrar estado actual antes de agregar
-        print("[DEBUG] Lista de espera ANTES de agregar:")
-        for _, e in STATE["clientes_espera"]:
-            print(f" - Cliente en espera: {e}")
-
         # Verificar si ya estaba en espera
         for _, e in STATE["clientes_espera"]:
             if e == email:
                 sock.send("Ya estabas en la cola de espera. Por favor aguarda.\n".encode())
-                print("[DEBUG] Cliente ya estaba en la lista de espera. No se agrega de nuevo.")
+                print(f"[INFO] Cliente {nombre} ya estaba en la cola de espera")
                 return
 
         # Agregar cliente a la lista de espera
         STATE["clientes_espera"].append((sock, email))
-        print(f"[DEBUG] Cliente {nombre} fue agregado a la lista de espera")
-
-        # Mostrar estado actual después de agregar
-        print("[DEBUG] Lista de espera DESPUÉS de agregar:")
-        for _, e in STATE["clientes_espera"]:
-            print(f" - Cliente en espera: {e}")
+        print(f"[INFO] Cliente {nombre} añadido a la cola de espera")
 
     # Confirmación al cliente
     sock.send(
         "Has sido añadido a la cola de espera. "
         "Un ejecutivo te contactará pronto…\n".encode()
     )
+
 
 
