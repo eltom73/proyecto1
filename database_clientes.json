@@ -1,84 +1,97 @@
 {
     "CLIENTES": {
         "AlexisSanchez@chile.com": {
-            "contrasena": "1234",
+            "contrase\u00f1a": "A",
             "nombre": "AlexisSanchez",
             "transacciones": [
                 {
                     "tipo": "compra",
                     "producto": "Charizard Ex",
-                    "fecha": "2025-04-18",
-                    "estado": "pendiente"
+                    "cantidad": 2,
+                    "precio": 3,
+                    "fecha": "2025-04-27 19:04:54",
+                    "estado": "completado"
                 },
                 {
-                    "tipo": "devolucion",
-                    "producto": "Lucario Ex",
-                    "fecha": "2025-04-19",
-                    "estado": "aceptada"
+                    "tipo": "devoluci\u00f3n",
+                    "producto": "Charizard Ex",
+                    "cantidad": 1,
+                    "fecha": "2025-04-27 20:06:43",
+                    "estado": "devuelto"
                 }
             ],
-            "cambios de contrasena": [
+            "cambios de contrase\u00f1a": [
                 {
-                    "fecha": "2025-04-18 03:16:45",
-                    "nueva": "1234"
+                    "fecha": "2025-04-27 16:21:03",
+                    "nueva": "ARSENAL"
+                },
+                {
+                    "fecha": "2025-04-27 19:04:28",
+                    "nueva": "A"
                 }
             ]
         },
         "ArturoVidal@chile.com": {
-            "contrasena": "Arturo123",
+            "contrase\u00f1a": "Arturo123",
             "nombre": "ArturoVidal",
             "transacciones": [],
-            "cambios de contrasena": []
+            "cambios de contrase\u00f1a": []
         },
         "Charles@chile.com": {
-            "contrasena": "UniversidadDeChile",
+            "contrase\u00f1a": "UniversidadDeChile",
             "nombre": "CharlesAranguiz",
             "transacciones": [],
-            "cambios de contrasena": []
+            "cambios de contrase\u00f1a": []
+        },
+        "Cr7@siuuu.com": {
+            "contrase\u00f1a": "ElBichoSIUU",
+            "nombre": "CristianoRonaldo",
+            "transacciones": [],
+            "cambios de contrase\u00f1a": []
         }
     },
     "EJECUTIVOS": {
         "Ejecutivo1@tc5g.com": {
-            "contrasena": "Ejecutivo123",
+            "contrase\u00f1a": "Ejecutivo123",
             "nombre": "Lionel Messi",
-            "n\u00c2\u00b0clientesAtendiendo": 0
+            "n\u00b0clientesAtendiendo": 0
         },
         "Ejecutivo2@tc5g.com": {
-            "contrasena": "Ejecutivo1234",
-            "nombre": "CR7",
-            "n\u00c2\u00b0clientesAtendiendo": 0
+            "contrase\u00f1a": "Ejecutivo1234",
+            "nombre": "Luis Suarez",
+            "n\u00b0clientesAtendiendo": 0
         },
         "Ejecutivo3@tc5g.com": {
-            "contrasena": "Ejecutivo12345",
+            "contrase\u00f1a": "Ejecutivo12345",
             "nombre": "NeymarJR",
-            "n\u00c2\u00b0clientesAtendiendo": 0
+            "n\u00b0clientesAtendiendo": 0
         }
     },
-    "Productos": {
+    "PRODUCTOS": {
         "Charizard Ex": {
-            "stock": 20,
+            "stock": 19,
             "precio": 3
         },
         "Lucario Ex": {
             "stock": 10,
             "precio": 2.5
+        },
+        "Picachu Ex": {
+            "stock": 15,
+            "precio": 2.5
+        },
+        "Mewtwo Ex": {
+            "stock": 5,
+            "precio": 2.5
         }
     },
     "Ingresados": [
         {
-            "timestamp": "18/04/2025 02:16:21",
+            "timestamp": "27/04/2025 19:03:48",
             "acci\u00f3n": "Cliente AlexisSanchez conectado"
         },
         {
-            "timestamp": "18/04/2025 02:19:02",
-            "acci\u00f3n": "Cliente AlexisSanchez conectado"
-        },
-        {
-            "timestamp": "18/04/2025 03:15:00",
-            "acci\u00f3n": "Cliente AlexisSanchez conectado"
-        },
-        {
-            "timestamp": "18/04/2025 03:16:23",
+            "timestamp": "27/04/2025 20:10:39",
             "acci\u00f3n": "Cliente AlexisSanchez conectado"
         }
     ]
