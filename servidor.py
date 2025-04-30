@@ -7,16 +7,23 @@ import socket
 import threading
 import json
 import funciones_cliente as fc
+from shared_state import FILEPATH, mutex, STATE
 from datetime import datetime
 import time
 
 # Variables globales
 FILEPATH = "database_clientes.json"
-CLIENTS_LIST = [] #Lista de Clientes en línea
-EXECUTIVE_LIST = [] #Lista de Ejecutivos en línea
-LISTA_ESPERA = [] #Lista de Clientes en espera de algún ejecutivo
-CONEXIONES_ACTIVAS = {} #Lista de conexiones activas entre ejecutivos y clientes
 mutex = threading.Lock() # Este impone el mutex
+
+# === NUEVO diccionario de estado, protegido por mutex =========
+STATE = {
+    "clientes_linea":   {},   # email -> socket
+    "ejecutivos_linea": {},   # email -> socket
+    "clientes_espera":  [],   # [(sock, email), …]
+    "conexiones":       {}    # sock_ejecutivo -> sock_cliente
+}
+# ===============================================================
+
 
 
 
@@ -37,51 +44,55 @@ mutex = threading.Lock() # Este impone el mutex
 
 # Funcion de cliente
 def Identificación(sock):
-    global CLIENTS_LIST, EXECUTIVE_LIST, LISTA_ESPERA, mutex 
-    
-    email = None # Inicializamos la variable para evitar errores
-    nombre = None # Inicializamos la variable para evitar errores
-    #es_ejecutivo = False  # Inicializamos la variable para evitar errores
+    email = None  # Inicializamos la variable para evitar errores
+    nombre = None  # Inicializamos la variable para evitar errores
     logueado = False  # Bandera para saber si el cliente pasó el login completo
-    try:
 
+    try:
         # Proceso de Identificación del cliente o ejecutivo
         sock.send("¡Bienvenido a la plataforma de servicio al cliente de la tienda TC5G!\n"
                   " Para autenticarse ingrese su mail y contraseña.\n ".encode())
-        #Bucle para pedir email y contraseña
+
+        # Bucle para pedir email y contraseña
         while True:
-            sock.send("Email: ".encode())
-            email = sock.recv(1024).decode().strip()
+            sock.send("Email: ".encode())  # Solicita email al cliente
+            email = sock.recv(1024).decode().strip()  # Recibe el correo
             print(f"[LOGIN] Cliente ingresó email: {email}")
+
             if not email:
                 sock.send("No se ingresó un correo. Intente nuevamente.\n".encode())
-                continue # vuelve a pedir email
-            # Abrir base de datos
+                continue  # vuelve a pedir email
+
+            # Abrir base de datos para buscar el correo
             with mutex:
                 with open(FILEPATH, "r", encoding="utf-8") as f:
                     data = json.load(f)
             clientes = data.get("CLIENTES", {})
             print(f"[DEBUG] clientes: {clientes}")
+
             # Verifica si el correo está registrado
             if email not in clientes:
                 sock.send("Correo no registrado. Intente nuevamente.\n".encode())
                 continue  # vuelve a pedir email
+
             # El correo es válido, se obtiene el usuario asociado
             usuario = clientes[email]
-            break # sale del bucle
-        # Pide contraseña si el correo fue válido
+            break  # sale del bucle
 
-#==============================================================================================================================================
-#==============================================================================================================================================
+        # Bucle para validar contraseña (máximo 3 intentos)
         intentos = 0
         while intentos < 3:
             sock.send("Contraseña: ".encode())
             contraseña = sock.recv(1024).decode().strip()
 
-            if usuario["contraseña"] == contraseña:
+            if usuario["contraseña"] == contraseña:  # Verifica si la contraseña es correcta
                 nombre = usuario["nombre"]
                 sock.send(f"¡Bienvenido/a {nombre}!\n".encode())
-                logueado = True
+                logueado = True  # El cliente ha pasado el login completo
+
+                # Añadir al diccionario de clientes en línea
+                with mutex:
+                    STATE["clientes_linea"][email] = sock
                 break
             else:
                 intentos += 1
@@ -90,14 +101,12 @@ def Identificación(sock):
         if not logueado:
             sock.send("Demasiados intentos fallidos. Conexión cerrada.\n".encode())
             return
-            
-#==============================================================================================================================================
-# #==============================================================================================================================================       
 
+        # Si pasó el login correctamente:
         if logueado:
-            # Registrar acción
+            # Registrar acción en el historial de ingresos
             with mutex:
-                with open(FILEPATH, "r+",encoding="utf-8") as f:
+                with open(FILEPATH, "r+", encoding="utf-8") as f:
                     data = json.load(f)
                     data["Ingresados"].append({
                         "timestamp": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
@@ -106,20 +115,24 @@ def Identificación(sock):
                     f.seek(0)
                     json.dump(data, f, indent=4)
                     f.truncate()
+
             print(f"[SERVIDOR] Cliente {nombre} autenticado correctamente.")
-            with mutex:
-                CLIENTS_LIST.append((sock, email)) # Añadimos el socket y el email a la lista de clientes en línea
-            fc.menu_cliente(sock, email, nombre) #Lo redirigimos al menú del cliente
-            
+            # Redirigir al menú principal del cliente
+            fc.menu_cliente(sock, email, nombre)
 
     except Exception as e:
         print(f"[SERVIDOR] Error al autenticar cliente: {e}")
         sock.send("Ocurrió un error durante la autenticación. Conexión cerrada.\n".encode())
-        
+
     finally:
         sock.close()
         with mutex:
-            CLIENTS_LIST = [(s, e) for (s, e) in CLIENTS_LIST if s != sock] # Elimina el socket del cliente de la lista de clientes en línea
+            # Al cerrar la conexión, eliminar el cliente de la lista de conectados y de espera
+            STATE["clientes_linea"].pop(email, None)
+            STATE["clientes_espera"] = [
+                (s, e) for (s, e) in STATE["clientes_espera"] if e != email
+            ]
+
 
 #-----------------------------------------------------------------------------------
 # EJECUTIVO
@@ -138,171 +151,191 @@ def guardar_db(path, db):
         json.dump(db, f, indent=4, ensure_ascii=False)
 
 
+
+
+# ---------------------------------------------------------------
+# FUNCIÓN QUE ATIENE A LOS EJECUTIVOS DESDE EL SERVIDOR
+# ---------------------------------------------------------------
 def manejar_ejecutivo(sock):
-    datos = cargar_db(FILEPATH) #leemos la base de datos json
+    """
+    • Autentica al ejecutivo (correo + contraseña).
+    • Registra al ejecutivo en STATE["ejecutivos_linea"].
+    • Atiende un bucle de comandos (:status, :details, :catalogue, etc.).
+    • Gestiona la conexión con clientes que están en espera (:connect).
+    """
+    datos = cargar_db(FILEPATH)  # Cargamos la BD una vez para info básica
 
     try:
-        login_data = sock.recv(1024).decode().split("|") #
+        # ------------------------------------------------------------------
+        # 1) *** HANDSHAKE DE LOGIN ***
+        # ------------------------------------------------------------------
+        login_data = sock.recv(1024).decode().split("|")
         if len(login_data) != 3:
-            sock.send("Formato inválido.".encode())
+            sock.send("Formato inválido.\n".encode())
             sock.close()
             return
 
-        _, correo, clave_ingresada = login_data #separar el mensaje recibido del ejecutivo en partes: email y contraseña
+        _, correo, clave_ingresada = login_data
         print(f"[SERVIDOR] Ejecutivo ingresó email: {correo} y contraseña: {clave_ingresada}")
 
-
-        #Validar ejecutivo en database
-        ejecutivos = datos.get("EJECUTIVOS", {}) #extraemos la lista de ejecutivos de la base de datos
+        # --- Validación de credenciales -----------------------------------
+        ejecutivos = datos.get("EJECUTIVOS", {})
         if correo not in ejecutivos:
-            sock.send("Correo no encontrado.".encode()) #si el correo no está en la base de datos, enviamos un mensaje de error
-            sock.close() #cerramos la conexión
+            sock.send("Correo no encontrado.\n".encode())
+            sock.close()
             return
-        
-        credenciales = ejecutivos[correo] #extraemos los correos de los ejecutivos de la base de datos
-        clave_almacenada = credenciales.get("contraseña") #extraemos la contraseña del ejecutivo de la base de datos
 
-        if clave_almacenada != clave_ingresada: #si la contraseña ingresada no coincide con la almacenada en la base, enviamos un mensaje de error
-            sock.send("Contraseña incorrecta.".encode()) #Error de contraseña
-            sock.close() #cerramos la conexión
+        credenciales = ejecutivos[correo]
+        if credenciales.get("contraseña") != clave_ingresada:
+            sock.send("Contraseña incorrecta.\n".encode())
+            sock.close()
             return
-        
-        #Numero de clientes conectados
-        cantidad_clientes = len(CLIENTS_LIST) #lista de clientes EN LÍNEA ≠ EN ESPERA
-        nombre = credenciales.get("nombre", "Ejecutivo") #extraemos el nombre del ejecutivo de la base de datos según el correo ingresado
-        mensaje_bienvenida = f"Hola {nombre}, en este momento hay {cantidad_clientes} clientes conectados" #MENSAJE: el numero de clientes en línea al ejecutivo
-        sock.send(mensaje_bienvenida.encode()) # enviamos el mensaje
 
-        while True: #bucle infinito para recibir comandos de parte del ejecutivo, según lo estipulado en el menú
-            msg = sock.recv(4096).decode() #mensaje recibido del ejecutivo
-            if not msg: #si el mensaje está vacío, cerramos la conexión
+        # --- Login exitoso ------------------------------------------------
+        nombre = credenciales.get("nombre", "Ejecutivo")
+        with mutex:
+            STATE["ejecutivos_linea"][correo] = sock    # Se registra como “en línea”
+            cantidad_clientes = len(STATE["clientes_linea"])
+
+        mensaje_bienvenida = f"Hola {nombre}, en este momento hay {cantidad_clientes} clientes conectados"
+        sock.send(mensaje_bienvenida.encode())
+
+        # ------------------------------------------------------------------
+        # 2) *** BUCLE PRINCIPAL DE COMANDOS DEL EJECUTIVO ***
+        # ------------------------------------------------------------------
+        while True:
+            msg = sock.recv(4096).decode().strip()
+            if not msg:           # Fin de conexión TCP
                 break
 
+            # -------------------- :status ---------------------------------
             if msg == ":status":
                 with mutex:
-                    cantidad_conectados = len(CLIENTS_LIST)
-                    cantidad_en_espera = len(LISTA_ESPERA)
-                response = f"Clientes conectados: {cantidad_conectados}\nClientes en espera: {cantidad_en_espera}" #Mensaje: clientes conectados y en espera según las listas CLIENTS_LIST y LISTA_ESPERA (su largo: len() )
-                sock.send(response.encode()) #enviamos el mensaje al ejecutivo
+                    conectados = len(STATE["clientes_linea"])
+                    en_espera  = len(STATE["clientes_espera"])
+                    print("[DEBUG] Ejecutando :status")
+                    print(f"  -> Clientes conectados: {conectados}")
+                    print(f"  -> Clientes en espera: {en_espera}")
+                sock.send(f"Clientes conectados: {conectados}\n"
+                        f"Clientes en espera: {en_espera}\n".encode())
 
+
+            # -------------------- :details --------------------------------
             elif msg == ":details":
+                detalles = []
                 with mutex:
-                    if CLIENTS_LIST:
-                        detalles = ""
-                        for (_, email) in CLIENTS_LIST:
-                            cliente_info = datos.get("CLIENTES", {}).get(email, {})
-                            nombre = cliente_info.get("nombre", "Nombre no encontrado")
-                            detalles += f"{email}: {nombre}\n"
-                    else:
-                        detalles = "No hay clientes conectados."
-                sock.send(detalles.encode())
+                    for email in STATE["clientes_linea"]:
+                        nombre_c = datos.get("CLIENTES", {}).get(email, {}).get("nombre", "")
+                        detalles.append(f"{email}: {nombre_c}")
+                respuesta = "\n".join(detalles) if detalles else "No hay clientes conectados."
+                sock.send((respuesta + "\n").encode())
 
+            # -------------------- :catalogue ------------------------------
             elif msg == ":catalogue":
+                # Recargamos la BD para tener precios/stock actualizados
+                datos = cargar_db(FILEPATH)
                 productos = datos.get("PRODUCTOS", {})
-                lista = "\n".join([f"{k}: ${int(v['precio']) if v['precio'] == int(v['precio']) else v['precio']}" for k, v in productos.items()])
-                sock.send(lista.encode())
+                lista = "\n".join(
+                    f"{k}: ${int(v['precio']) if v['precio'] == int(v['precio']) else v['precio']}"
+                    for k, v in productos.items()
+                )
+                sock.send((lista + "\n").encode())
 
+            # -------------------- :publish carta precio -------------------
             elif msg.startswith(":publish"):
-                partes = msg.split()
+                partes = msg.split(maxsplit=2)
                 if len(partes) == 3:
                     _, carta, precio = partes
-                    datos.setdefault("PRODUCTOS", {})[carta] = {
-                        "stock": 10,
-                        "precio": float(precio)
-                    }
-                    guardar_db(FILEPATH, datos)
-                    sock.send("Carta publicada.".encode())
-                else:
-                    sock.send("Uso incorrecto de :publish [carta] [precio]".encode())
-
-
-
-
-            elif msg.startswith(":history"): #si el ejecutivo pide el historial de un cliente, el mensaje debe empezar con :history. Luego, va el email del cliente
-                partes = msg.split() #Separamos el mensaje en partes, es decir, el comando y el email del cliente. Ejemplo: :history [email] Ejecutivo1@tc5g.com
-                if len(partes) == 2: #Si el mensaje tiene 2 partes, es decir, el comando y el email del cliente, es correcto. Lo definimos como algo, email cliente
-                    _, email_cliente = partes
-
-                    #Verifica si el ejecutivo está atendiendo al cliente que pidió el historial
-                    if email_cliente not in [email for (_, email) in CLIENTS_LIST]: #Verificamos si el email del cliente está en la lista de clientes conectados
-                        sock.send("Debes estar conectado con el cliente\n".encode())
+                    try:
+                        precio_float = float(precio)
+                    except ValueError:
+                        sock.send("Precio inválido.\n".encode())
                         continue
-                    with mutex:  #cargamos la base de datos
-                        with open(FILEPATH, "r") as f:
-                            data = json.load(f)
 
-                            cliente = data["CLIENTES"].get(email_cliente, {}) #Definimos el cliente como el email del cliente que pidió el historial. Si no existe, devuelve un diccionario vacío
-                            if not cliente:
-                                sock.send(f"No se encontró el cliente {email_cliente}".encode())
-                                continue
-
-                            historial = cliente.get("transacciones", []) #Extraemos sus trasacciones mediante la variable cliente definida anteriormente. Si no existe, devuelve una lista vacía
-                            if not historial:
-                                sock.send(f"No hay historial para {email_cliente}".encode()) #Si no hay historial, enviamos un mensaje al ejecutivo diciendo que no hay historial
-                                continue
-
-                            # Formatear el historial    
-                            mensaje = f"Historial completo de {cliente.get('nombre', email_cliente)}:\n"
-                            for op in historial:
-                                mensaje += (
-                                    f" {op['tipo'].upper()} - {op['producto']} "
-                                f"(X{op.get('cantidad', 1)})- " 
-                                f"{op['fecha']} - "  
-                                f"Estado: {op['estado']}\n"
-                                )
-                            sock.send(mensaje.encode())
+                    datos["PRODUCTOS"][carta] = {"stock": 10, "precio": precio_float}
+                    guardar_db(FILEPATH, datos)
+                    sock.send("Carta publicada.\n".encode())
                 else:
-                    sock.send("Uso incorrecto de :history [email]".encode())
+                    sock.send("Uso: :publish [carta] [precio]\n".encode())
 
+            # -------------------- :history email --------------------------
+            elif msg.startswith(":history"):
+                partes = msg.split(maxsplit=1)
+                if len(partes) != 2:
+                    sock.send("Uso: :history [email]\n".encode())
+                    continue
+                email_cliente = partes[1]
+
+                # Debe estar conectado y ser el cliente al que atiende (opcional)
+                with mutex:
+                    cliente_conectado = email_cliente in STATE["clientes_linea"]
+                    atendiendo_al_cliente = STATE["conexiones"].get(sock) == STATE["clientes_linea"].get(email_cliente)
+
+                if not cliente_conectado or not atendiendo_al_cliente:
+                    sock.send("Debes estar conectado con ese cliente para ver su historial.\n".encode())
+                    continue
+
+                # Recargar la BD y mostrar historial
+                datos_hist = cargar_db(FILEPATH)
+                cliente = datos_hist["CLIENTES"].get(email_cliente, {})
+                historial = cliente.get("transacciones", [])
+                if not historial:
+                    sock.send("No hay historial para ese cliente.\n".encode())
+                    continue
+
+                mensaje = f"Historial completo de {cliente.get('nombre', email_cliente)}:\n"
+                for op in historial:
+                    mensaje += (f" {op['tipo'].upper()} - {op['producto']} "
+                                f"(x{op.get('cantidad', 1)}) - "
+                                f"{op['fecha']} - Estado: {op['estado']}\n")
+                sock.send(mensaje.encode())
+
+            # -------------------- :connect --------------------------------
             elif msg == ":connect":
                 with mutex:
-                    if not LISTA_ESPERA: #si la lista de espera está vacía, enviamos un mensaje al ejecutivo diciendo que no hay clientes en espera
+                    if not STATE["clientes_espera"]:
                         sock.send("No hay clientes en espera.\n".encode())
                         continue
-                    #El ejecutivo se conecta al primer cliente de la lista de espera
-                    cliente_sock, email_cliente = LISTA_ESPERA.pop(0) #saca el primer cliente de la lista de espera. La lista de espera contiene email de los clientes. En la función contactar_ejecutivo, se agrega el email del cliente a la lista de espera
-                                                        #A la vez, se elimina de la lista de clientes en línea
-                    try:
-                    #Obtener nombre del cliente
-                        with mutex:
-                            with open(FILEPATH, "r") as f:
-                                data = json.load(f)
-                                cliente = data.get["CLIENTES",{}].get(email_cliente, {}).get("nombre", email_cliente)
+                    cli_sock, cli_email = STATE["clientes_espera"].pop(0)
+                    STATE["conexiones"][sock] = cli_sock   # Vinculamos el chat
 
-                         #Establecer conexión con el cliente
-                        CONEXIONES_ACTIVAS[sock] = cliente_sock #Agregamos el socket del ejecutivo a la lista de conexiones activas
-                        #Notificaciones
-                        cliente_sock.send(f"Conectado con el ejecutivo {nombre} ({correo})\n".encode()) #enviamos un mensaje AL CLIENTE diciendo que se ha conectado con el ejecutivo a traves de su socket
-                        sock.send(f"Conectado con {cliente} ({email_cliente})\n".encode()) #enviamos un mensaje AL EJECUTIVO diciendo que se ha conectado con el cliente
-                        print(f"[SERVIDOR] Ejecutivo {nombre} conectado con cliente {cliente} ({email_cliente})") #registramos la conexión en la consola del servidor
+                nombre_cli = datos["CLIENTES"].get(cli_email, {}).get("nombre", cli_email)
+                cli_sock.send(f"Conectado con el ejecutivo {nombre}.\n".encode())
+                sock.send(f"Conectado con {nombre_cli} ({cli_email}).\n".encode())
 
-
-                    except (ConnectionError, OSError):
-                        sock.send("El cliente no se encuentra disponible".encode())
-                        continue
-
-                  
-
-                    ##Notificar conexión al cliente
-                    #info_cliente = datos["CLIENTES"].get(email_cliente, {})
-                    #nombre_cliente = info_cliente.get("nombre", email_cliente)
-                    #sock.send(f"Conectado con {nombre_cliente} ({email_cliente})\n".encode()) #enviamos un mensaje al ejecutivo diciendo que se ha conectado con el cliente
-                    #cliente_sock.send(f"Conectado con el ejecutivo {nombre} ({correo})\n".encode()) #enviamos un mensaje al cliente diciendo que se ha conectado con el ejecutivo a traves de su socket
-
-                    ##Registrar la conexión
-                    #print(f"[SERVIDOR] Ejecutivo {nombre} conectado con cliente {nombre_cliente} ({email_cliente})")  
-                                            
-        
-
+            # -------------------- :exit -----------------------------------
             elif msg == ":exit":
                 break
-            else:
-                sock.send("Comando recibido (no implementado completamente).".encode())
 
+            # -------------------- comando desconocido --------------------
+            else:
+                sock.send("Comando no implementado.\n".encode())
+
+    # ------------------------------------------------------------------
+    # *** MANEJO DE EXCEPCIONES ***
+    # ------------------------------------------------------------------
     except Exception as e:
         print(f"[ERROR] Ejecutivo error: {e}")
+
+    # ------------------------------------------------------------------
+    # *** LIMPIEZA FINAL ***
+    # ------------------------------------------------------------------
     finally:
-        sock.close()
+        with mutex:
+            # Quitamos al ejecutivo de la lista de “en línea”
+            STATE["ejecutivos_linea"].pop(correo, None)
+            # Si estaba en conversación, avisamos al cliente
+            cli_sock = STATE["conexiones"].pop(sock, None)
+            if cli_sock:
+                try:
+                    cli_sock.send("El ejecutivo se ha desconectado.\n".encode())
+                except (BrokenPipeError, OSError):
+                    pass
+
+
+
+
+
     
 if __name__ == "__main__":
     # Se configura el servidor para que corra localmente y en el puerto 8889.
@@ -333,3 +366,6 @@ if __name__ == "__main__":
                 print(f"[SERVIDOR] Error en el handshake inicial: {e}")
                 conn.close()
             
+
+
+# CLIENTS_LIST, EXECUTIVE_LIST, LISTA_ESPERA, CONEXIONES_ACTIVAS            

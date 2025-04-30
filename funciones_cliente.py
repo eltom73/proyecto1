@@ -1,12 +1,12 @@
 """
 Funciones del menú
 """
+
 import json
-from servidor import FILEPATH, mutex  # usamos el mismo archivo JSON
-from servidor import LISTA_ESPERA  # usamos la misma lista de clientes
-from servidor import CLIENTS_LIST  # usamos el mismo mutex para evitar problemas de concurrencia
+from servidor import FILEPATH, mutex, STATE
 import socket
 import threading    
+from shared_state import FILEPATH, mutex, STATE
 from datetime import datetime
 
 def menu_cliente(sock, email, nombre):
@@ -360,69 +360,39 @@ def confirmar_envio(sock, email, nombre): #marca una operación pendiente como �
         print(f"[ERROR] confirmar_envio: {e}")
         sock.send("Error al procesar la confirmación.\n".encode())
 
-def contactar_ejecutivo(sock, email, nombre): #envía el cliente a una cola (puede ser una lista compartida o archivo queue.json), esperar match con ejecutivo
-    # Meterlo a la cola, esperar match con ejecutivo
-    global LISTA_ESPERA #usamos la lista de espera definida en el servidor
-    try:
-    
-        
-        with mutex:
-            print(f"[SERVIDOR] Cliente {nombre} está intentando contactar a un ejecutivo.")
+def contactar_ejecutivo(sock, email, nombre):
+    """
+    El cliente se pone en la cola de espera para un ejecutivo.
+    """
 
-            # Verificar si el cliente ya está en la lista de espera
-            print(f"[SERVIDOR] Verificando si el cliente {nombre} ya está en la lista de espera.")
-            if any (cliente[1] == email for cliente in LISTA_ESPERA): #Caso base: si el cliente ya está en la lista de espera, no lo agregamos nuevamente
-                print(f"[SERVIDOR] Cliente {nombre} ya está en la lista de espera.")
-                sock.send("Ya estás en la cola de espera para hablar con un ejecutivo.\n".encode()) #Mensaje para el cliente
+    print(f"[DEBUG] Se llamó contactar_ejecutivo con email={email}, nombre={nombre}")
+
+    with mutex:
+        # Mostrar estado actual antes de agregar
+        print("[DEBUG] Lista de espera ANTES de agregar:")
+        for _, e in STATE["clientes_espera"]:
+            print(f" - Cliente en espera: {e}")
+
+        # Verificar si ya estaba en espera
+        for _, e in STATE["clientes_espera"]:
+            if e == email:
+                sock.send("Ya estabas en la cola de espera. Por favor aguarda.\n".encode())
+                print("[DEBUG] Cliente ya estaba en la lista de espera. No se agrega de nuevo.")
                 return
-            
-            # Agregar cliente a la lista de espera
-            print(f"[SERVIDOR] Agregando cliente {nombre} a la lista de espera.")
-            LISTA_ESPERA.append((sock, email, nombre)) #Agregamos el cliente a la lista de espera
-            print(f"[SERVIDOR] Cliente {nombre} agregado a la lista de espera.")
-            sock.send("Has sido agregado a la cola de espera, espera para hablar con un ejecutivo.\n".encode())
+
+        # Agregar cliente a la lista de espera
+        STATE["clientes_espera"].append((sock, email))
+        print(f"[DEBUG] Cliente {nombre} fue agregado a la lista de espera")
+
+        # Mostrar estado actual después de agregar
+        print("[DEBUG] Lista de espera DESPUÉS de agregar:")
+        for _, e in STATE["clientes_espera"]:
+            print(f" - Cliente en espera: {e}")
+
+    # Confirmación al cliente
+    sock.send(
+        "Has sido añadido a la cola de espera. "
+        "Un ejecutivo te contactará pronto…\n".encode()
+    )
 
 
-        #Cliente esperando match con ejecutivo
-        print(f"[SERVIDOR] Cliente {nombre} esperando match con algún ejecutivo.")
-        while True:
-            try:
-                sock.send("ping\n".encode()) #Enviamos un ping al cliente para mantener la conexión activa
-            except:
-                print(f"[SERVIDOR] Cliente {nombre} se ha desconectado.")
-                with mutex:
-                    LISTA_ESPERA = [cliente for cliente in LISTA_ESPERA if cliente[1] != email]
-                return
-            
-            # Esperar a que un ejecutivo esté disponible
-            with mutex:
-                print(f"[SERVIDOR] Verificando si hay un ejecutivo disponible para el cliente {nombre}.")
-                if not any (cliente[1] == email for cliente in LISTA_ESPERA): #Si el cliente ya no está en la lista de espera, salimos del bucle. El ejecutivo en su funcion al conectar al cliente debería eliminarlo de la lista de espera.
-                    print(f"[SERVIDOR] Cliente {nombre} ha salido de la lista de espera y se ha conectado con el ejecutivo.")
-                    sock.send("Un ejecutivo se ha conectado contigo.\n".encode())
-                    return
-
-            # Esperar un tiempo antes de volver a verificar la lista de espera
-            sock.settimeout(2.0) #Esperamos 2 segundos antes de volver a verificar la lista de espera
-            try:
-                mensaje = sock.recv(1024).decode().strip().lower()
-                if mensaje == "salir": #Si el cliente escribe "salir", lo sacamos de la lista de espera y cerramos la conexión
-                    with mutex:
-                        LISTA_ESPERA = [cliente for cliente in LISTA_ESPERA if cliente [1] != email] #sacamos al cliente de la lista de espera redefiniendo la lista como la lista de emailes que no son iguales (!= email) al email del cliente que se quiere salir
-                    print(f"[SERVIDOR] Cliente {nombre} ha salido de la cola de espera.") #mensaje para monitorizar el estado de la operación
-                    sock.send("Has salido de la cola de espera.\n".encode())
-                    return
-            except socket.timeout:
-                # Timeout alcanzado, continuar esperando
-                continue    
-            except Exception as e:
-                print(f"[ERROR] contactar_ejecutivo: {e}")
-                raise
-    except Exception as e:
-        print(f"[ERROR] contactar_ejecutivo: {e}")
-        with mutex:
-            LISTA_ESPERA = [cliente for cliente in LISTA_ESPERA if cliente [1] != email]
-        try:
-            sock.send("Error al procesar la solicitud de contacto con un ejecutivo.\n".encode())
-        except:
-            print(f"[ERROR] Error al enviar mensaje al cliente {nombre}.")
