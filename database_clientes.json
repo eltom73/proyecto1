@@ -18,6 +18,14 @@
                     "cantidad": 1,
                     "fecha": "2025-04-27 20:06:43",
                     "estado": "devuelto"
+                },
+                {
+                    "tipo": "compra",
+                    "producto": "Lucario Ex",
+                    "cantidad": 3,
+                    "precio": 2.5,
+                    "fecha": "2025-04-30 17:31:55",
+                    "estado": "env\u00edo pendiente"
                 }
             ],
             "cambios de contrase\u00f1a": [
@@ -69,19 +77,19 @@
     },
     "PRODUCTOS": {
         "Charizard Ex": {
-            "stock": 19,
+            "stock": 41,
             "precio": 3
         },
         "Lucario Ex": {
-            "stock": 10,
+            "stock": 25,
             "precio": 2.5
         },
         "Picachu Ex": {
-            "stock": 15,
+            "stock": 56,
             "precio": 2.5
         },
         "Mewtwo Ex": {
-            "stock": 5,
+            "stock": 56,
             "precio": 2.5
         }
     },
@@ -92,6 +100,10 @@
         },
         {
             "timestamp": "27/04/2025 20:10:39",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "30/04/2025 17:31:23",
             "acci\u00f3n": "Cliente AlexisSanchez conectado"
         }
     ]

@@ -70,24 +70,30 @@ def Identificación(sock):
             usuario = clientes[email]
             break # sale del bucle
         # Pide contraseña si el correo fue válido
-        while True:
+
+#==============================================================================================================================================
+#==============================================================================================================================================
+        intentos = 0
+        while intentos < 3:
             sock.send("Contraseña: ".encode())
             contraseña = sock.recv(1024).decode().strip()
 
-            print(f"[SERVIDOR] Cliente ingresó contraseña: {contraseña}")
-            print(f"[SERVIDOR] usuario: {usuario}")
-            print(f"[SERVIDOR] type(usuario): {type(usuario)}")
-
-            if usuario["contraseña"] == contraseña: # Verifica si la contraseña es correcta
+            if usuario["contraseña"] == contraseña:
                 nombre = usuario["nombre"]
                 sock.send(f"¡Bienvenido/a {nombre}!\n".encode())
-                logueado = True # El cliente ha pasado el login completo
-
+                logueado = True
                 break
             else:
-                sock.send("Error: clave incorrecta. Conexión cerrada.\n".encode())
+                intentos += 1
+                sock.send(f"Contraseña incorrecta. Intento {intentos}/3\n".encode())
+
+        if not logueado:
+            sock.send("Demasiados intentos fallidos. Conexión cerrada.\n".encode())
+            return
             
-       
+#==============================================================================================================================================
+# #==============================================================================================================================================       
+
         if logueado:
             # Registrar acción
             with mutex:
@@ -236,13 +242,13 @@ def manejar_ejecutivo(sock):
                                 continue
 
                             # Formatear el historial    
-                            mensaje = f"Historial completo de {cliente.get("nombre", email_cliente)}:\n"
+                            mensaje = f"Historial completo de {cliente.get('nombre', email_cliente)}:\n"
                             for op in historial:
                                 mensaje += (
-                                    f" {op["tipo"].upper()} - {op["producto"]} "
-                                f"(X{op.get("cantidad", 1)})- " 
-                                f"{op["fecha"]} - "  
-                                f"Estado: {op["estado"]}\n"
+                                    f" {op['tipo'].upper()} - {op['producto']} "
+                                f"(X{op.get('cantidad', 1)})- " 
+                                f"{op['fecha']} - "  
+                                f"Estado: {op['estado']}\n"
                                 )
                             sock.send(mensaje.encode())
                 else:
@@ -297,79 +303,6 @@ def manejar_ejecutivo(sock):
         print(f"[ERROR] Ejecutivo error: {e}")
     finally:
         sock.close()
-
-
-
-
-    #    print(f"Conexión exitosa como {'ejecutivo' if es_ejecutivo else 'cliente'}: {nombre} ")
-    #    with mutex:
-    #        if es_ejecutivo: 
-    #            EXECUTIVE_LIST.append((sock, email)) #Añadimos el socket y el email a la lista de ejecutivos
-    #            Log_in(f"Ejecutivo {nombre} conectado") #Ingresamos el tiempo de conexión del ejecutivo a la database
-    #        else:
-    #            CLIENTS_LIST.append((sock, email)) #Añadimos el socket y el email a la lista de clientes
-    #            Log_in(f"Cliente {nombre} conectado") #Ingresamos el tiempo de conexión del cliente a la database
-    #    sock.send(f"Asistente: ¡Bienvenido {nombre}! ¿En qué te podemos ayudar?\n".encode()) #Ya ingresado, le damos la bienvenida al cliente
-#
-    #    if es_ejecutivo:
-    #        Ejecutivo(sock, email, nombre) #Si es ejecutivo, llamamos a la función Ejecutivo
-    #    else:
-    #        Cliente(sock, email) #Si es cliente, llamamos a la función Cliente
-    #except Exception as e:
-    #    print(f"Error en Cliente: {e}")
-#
-    #finally: 
-    #    with mutex:
-    #        if es_ejecutivo and (sock, email) in EXECUTIVE_LIST:  #Cerramos la conexión del ejecutivo y eliminamos de la lista de " en línea" 
-    #            EXECUTIVE_LIST.remove((sock, email))
-    #            Log_in(f"Ejecutivo {nombre} desconectado")
-    #        elif (sock, email) in CLIENTS_LIST:  #Cerramos la conexión del cliente y eliminamos de la lista de " en línea" 
-    #            CLIENTS_LIST.remove((sock, email))
-    #            Log_in(f"Cliente {nombre} desconectado") 
-    #   sock.close()
-
-#def Ejecutivo (sock, nombre): #Función que maneja la interacción con el ejecutivo
-#        EstadoDeClientes = None #Caso base. Al inicio no atiende a nadie
-#        
-#        while True:
-#            if EstadoDeClientes:
-#                prompt = f"[Ejecutivo {nombre} atendiendo a {EstadoDeClientes[1]}] Ingrese comando:"
-#            else:
-#                prompt=f"[Ejecutivo {nombre}] Ingrese comando: "
-#            sock.send(prompt.encode())
-#            comando = sock.recv(1024).decode().strip().lower()
-#
-#            if comando == ":status":
-#                with mutex:
-#                    status = f"Clientes conectados: {len(CLIENTS_LIST)}\n En cola de espera: {len(LISTA_ESPERA)}"
-#                    sock.send(status.encode())
-#            elif comando == ":details":
-#                details = "Clientes conectados:\n"
-#                with mutex:
-#                    for cliente in CLIENTS_LIST:
-#                        details += f"- {cliente[1]}\n"
-#                    sock.send(details.encode())
-#            elif comando.startswith(":history") and EstadoDeClientes:
-#                pass #aca va la funcion 
-#
-#            elif comando == ":disconnect" and EstadoDeClientes:
-#                sock.send(f"Desconectando de {EstadoDeClientes[1]}\n".encode())
-#                EstadoDeClientes[0].send("El ejecutivo terminó al sesión. ¿Desea usted realizar alguna otra operación?\n".encode())
-#                EstadoDeClientes = None
-#            elif comando == ":exit":
-#                sock.send("Desconectando...\n".encode())
-#                break
-#            elif not EstadoDeClientes and LISTA_ESPERA:
-#                with mutex:
-#                    EstadoDeClientes = LISTA_ESPERA.pop(0)
-#                sock.send(f"Conectado con {EstadoDeClientes[1]}\n".encode())
-#                EstadoDeClientes[0].send("Conectado con el ejecutivo....Espere.... \n".encode())
-#                Log_in(f"Ejecutivo {nombre} atendiendo a {EstadoDeClientes[1]}")
-#            
-#            else:
-#                sock.send("Comando no reconocido. Intente nuevamente.\n".encode())
-
-      
     
 if __name__ == "__main__":
     # Se configura el servidor para que corra localmente y en el puerto 8889.
