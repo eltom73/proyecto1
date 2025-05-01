@@ -145,6 +145,33 @@ def guardar_db(path, db):
         json.dump(db, f, indent=4, ensure_ascii=False)
 
 
+def chat_ejecutivo(sock_ejec, sock_cliente):
+    """
+    Maneja el chat en vivo entre ejecutivo y cliente.
+    """
+    try:
+        while True:
+            mensaje = sock_ejec.recv(1024).decode()
+            if mensaje.startswith(":"):
+                break  # El ejecutivo usó un comando, salimos del chat
+            sock_cliente.send(f"Ejecutivo: {mensaje}\n".encode())
+    except Exception as e:
+        print(f"[ERROR] chat_ejecutivo: {e}")
+
+
+def chat_cliente_a_ejecutivo(sock_cliente, sock_ejecutivo):
+    """
+    Hilo que escucha los mensajes del cliente y los reenvía al ejecutivo.
+    """
+    try:
+        while True:
+            mensaje = sock_cliente.recv(1024).decode()
+            if not mensaje:
+                break
+            sock_ejecutivo.send(f"{mensaje}\n".encode())
+    except Exception as e:
+        print(f"[ERROR] chat_cliente_a_ejecutivo: {e}")
+       
 
 
 # ---------------------------------------------------------------
@@ -302,7 +329,13 @@ def manejar_ejecutivo(sock):
                         f"{op['fecha']} - Estado: {op['estado']}\n"
                     )
                 sock.send(mensaje.encode())
-
+                try:
+                    # También enviamos el historial al cliente
+                    if conexion:
+                        cli_sock, _ = conexion
+                        cli_sock.send(mensaje.encode())
+                except:
+                    pass
 
 
             # -------------------- :connect --------------------------------
@@ -312,17 +345,19 @@ def manejar_ejecutivo(sock):
                         sock.send("No hay clientes en espera.\n".encode())
                         continue
                     cli_sock, cli_email = STATE["clientes_espera"].pop(0)
-
-                    # Registrar conexión solo con socket y correo
                     STATE["conexiones"][correo] = (cli_sock, cli_email)
 
                 nombre_cli = datos["CLIENTES"].get(cli_email, {}).get("nombre", cli_email)
+                
+                # Mensajes de bienvenida a ambas partes
                 cli_sock.send(f"Conectado con el ejecutivo {nombre}.\n".encode())
                 sock.send(f"Conectado con {nombre_cli} ({cli_email}).\n".encode())
 
-                print("[DEBUG] Estado de STATE después de :connect:")
-                print(" - conexiones:", STATE["conexiones"])
-                print(" - clientes_linea:", STATE["clientes_linea"])
+                # 🔄 Lanza los hilos después
+                threading.Thread(target=chat_ejecutivo, args=(sock, cli_sock), daemon=True).start()
+                threading.Thread(target=chat_cliente_a_ejecutivo, args=(cli_sock, sock), daemon=True).start()
+
+
 
             # -------------------- :exit -----------------------------------
             elif msg == ":exit":

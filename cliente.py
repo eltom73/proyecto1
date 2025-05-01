@@ -57,7 +57,7 @@ def main():
                 
             # Enviar mensaje normal al servidor
             try:
-                sock.send((mensaje + "\n").encode('utf-8'))
+                sock.send(mensaje.encode('utf-8'))
             except BrokenPipeError:
                 print("[Error: No se pudo enviar el mensaje - conexión cerrada]")
                 sock.close()

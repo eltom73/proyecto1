@@ -42,19 +42,8 @@ def menu_cliente(sock, email, nombre):
 
         elif opcion == "6":
             contactar_ejecutivo(sock, email, nombre)
-
-            # Esperamos mensajes del ejecutivo en bucle
-            while True:
-                try:
-                    respuesta = sock.recv(4096).decode()
-                    if not respuesta:
-                        print("[Desconectado del ejecutivo]")
-                        break
-                    print(f"Asistente:\n{respuesta}")
-                except (ConnectionResetError, ConnectionAbortedError):
-                    print("[Conexión cerrada por el ejecutivo]")
-                    break
-            break  # Salimos del menú cliente tras la conversación
+            chat_con_ejecutivo(sock)
+            return  # Salimos del menú porque ya está en el chat
 
         
         elif opcion == "7":
@@ -434,11 +423,34 @@ def contactar_ejecutivo(sock, email, nombre):
         STATE["clientes_espera"].append((sock, email))
         print(f"[INFO] Cliente {nombre} añadido a la cola de espera")
 
+        # ─── NUEVO: Avisar a todos los ejecutivos conectados ───
+        for s_ejec in STATE["ejecutivos_linea"].values():
+            try:
+                s_ejec.send(f"El cliente {nombre} ({email}) se quiere conectar\n".encode())
+            except (BrokenPipeError, OSError):
+                pass
+
     # Confirmación al cliente
     sock.send(
         "Has sido añadido a la cola de espera. "
         "Un ejecutivo te contactará pronto…\n".encode()
     )
+
+def chat_con_ejecutivo(sock):
+    """
+    Función que maneja el chat en vivo con el ejecutivo.
+    """
+    try:
+        while True:
+            mensaje = sock.recv(1024).decode()
+            if not mensaje:
+                break
+            print(mensaje, end="")  # Mostrar mensaje recibido sin doble salto
+    except Exception as e:
+        print(f"[ERROR] chat_con_ejecutivo: {e}")
+    finally:
+        print("[Conexión finalizada con el ejecutivo]")
+
 
     
 
