@@ -156,28 +156,41 @@ def manejar_ejecutivo(sock):
     datos = cargar_db(FILEPATH)  # Cargamos la BD una vez para info básica
 
     try:
-        # ------------------------------------------------------------------
-        # 1) *** HANDSHAKE DE LOGIN ***
-        # ------------------------------------------------------------------
-        login_data = sock.recv(1024).decode().split("|")
-        if len(login_data) != 3:
-            sock.send("Formato inválido.\n".encode())
-            sock.close()
-            return
+# ------------------------------------------------------------------
+# 1) *** HANDSHAKE DE LOGIN ***
+# ------------------------------------------------------------------
 
-        _, correo, clave_ingresada = login_data
-        print(f"[SERVIDOR] Ejecutivo ingresó email: {correo} y contraseña: {clave_ingresada}")
+        # Primero recibimos el correo
+        correo = sock.recv(1024).decode().strip()
+        print(f"[SERVIDOR] Ejecutivo ingresó email: {correo}")
 
-        # --- Validación de credenciales -----------------------------------
+        # Validamos que el correo esté en la base de datos
         ejecutivos = datos.get("EJECUTIVOS", {})
         if correo not in ejecutivos:
-            sock.send("Correo no encontrado.\n".encode())
+            sock.send("Correo no encontrado. Conexión cerrada.\n".encode())
             sock.close()
             return
 
         credenciales = ejecutivos[correo]
-        if credenciales.get("contraseña") != clave_ingresada:
-            sock.send("Contraseña incorrecta.\n".encode())
+        clave_correcta = credenciales.get("contraseña")
+
+        # Bucle de intento de contraseña
+        sock.send("Ingrese su constraseña: ".encode()) # Primer intento
+        intentos = 1
+        while intentos <= 3:
+            clave_ingresada = sock.recv(1024).decode().strip()
+
+            if clave_ingresada == clave_correcta:
+                break
+            else:
+                intentos += 1
+                if intentos <= 3:
+                    sock.send(f"Contraseña incorrecta. Intento {intentos - 1}/3\nContraseña: ".encode())
+
+
+        # Si falló 3 veces
+        if clave_ingresada != clave_correcta:
+            sock.send("Demasiados intentos fallidos. Conexión cerrada.\n".encode())
             sock.close()
             return
 
@@ -189,6 +202,7 @@ def manejar_ejecutivo(sock):
 
         mensaje_bienvenida = f"Hola {nombre}, en este momento hay {cantidad_clientes} clientes conectados"
         sock.send(mensaje_bienvenida.encode())
+
 
         # ------------------------------------------------------------------
         # 2) *** BUCLE PRINCIPAL DE COMANDOS DEL EJECUTIVO ***

@@ -1,6 +1,6 @@
 {
     "CLIENTES": {
-        "AlexisSanchez@chile.com": {
+        "A@A.com": {
             "contrase\u00f1a": "A",
             "nombre": "AlexisSanchez",
             "transacciones": [
@@ -59,8 +59,8 @@
         }
     },
     "EJECUTIVOS": {
-        "Ejecutivo1@tc5g.com": {
-            "contrase\u00f1a": "Ejecutivo123",
+        "E@E.com": {
+            "contrase\u00f1a": "E",
             "nombre": "Lionel Messi",
             "n\u00b0clientesAtendiendo": 0
         },
@@ -117,6 +117,18 @@
         {
             "timestamp": "30/04/2025 19:17:28",
             "acci\u00f3n": "Cliente ArturoVidal conectado"
+        },
+        {
+            "timestamp": "30/04/2025 21:44:41",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "30/04/2025 21:50:35",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "30/04/2025 21:57:14",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
         }
     ]
 }
