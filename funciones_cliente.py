@@ -6,7 +6,8 @@ import json
 import socket
 import threading    
 from shared_state import FILEPATH, mutex, STATE
-from datetime import datetime
+from datetime import datetime, timedelta   
+
 
 def menu_cliente(sock, email, nombre):
     while True:
@@ -26,16 +27,36 @@ def menu_cliente(sock, email, nombre):
 
         if opcion == "1":
             cambiar_contrasena(sock, email,nombre)
+
         elif opcion == "2":
             historial_de_operaciones(sock, email)
+
         elif opcion == "3":
             comprar_cartas(sock, email,nombre)
+
         elif opcion == "4":
             devolver_cartas(sock, email,nombre)
+
         elif opcion == "5":
             confirmar_envio(sock, email, nombre)
+
         elif opcion == "6":
             contactar_ejecutivo(sock, email, nombre)
+
+            # Esperamos mensajes del ejecutivo en bucle
+            while True:
+                try:
+                    respuesta = sock.recv(4096).decode()
+                    if not respuesta:
+                        print("[Desconectado del ejecutivo]")
+                        break
+                    print(f"Asistente:\n{respuesta}")
+                except (ConnectionResetError, ConnectionAbortedError):
+                    print("[Conexión cerrada por el ejecutivo]")
+                    break
+            break  # Salimos del menú cliente tras la conversación
+
+        
         elif opcion == "7":
             sock.send("Sesión finalizada. ¡Hasta luego!\n".encode())
             break
@@ -78,38 +99,74 @@ def cambiar_contrasena(sock, email,nombre):
 
 
 def historial_de_operaciones(sock, email):
+    """
+    • Muestra las transacciones de los últimos 12 meses.
+    • Primero envía un listado resumido [n] (fecha).
+    • Luego pregunta qué entrada quiere detallar.
+    """
     try:
+        # ---------- CARGAR DATOS ----------
         with mutex:
-            with open(FILEPATH, "r") as f:
+            with open(FILEPATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
         cliente = data["CLIENTES"].get(email)
-
         if not cliente:
             sock.send("Error: cliente no encontrado.\n".encode())
             return
 
-        historial = cliente.get("transacciones", [])
-
-        if not historial:
+        transacciones = cliente.get("transacciones", [])
+        if not transacciones:
             sock.send("No tienes transacciones registradas.\n".encode())
             return
 
-        mensaje = "\n--- Historial de operaciones ---\n"
-        for i, operacion in enumerate(historial, 1):
-            linea = (
-                f"{i}. {operacion['tipo'].capitalize()} - "
-                f"{operacion['producto']} - "
-                f"{operacion['fecha']} - "
-                f"Estado: {operacion['estado']}\n"
-            )
-            mensaje += linea
+        # ---------- FILTRAR ÚLTIMO AÑO ----------
+        ahora = datetime.now()
+        hace_un_ano = ahora - timedelta(days=365)
+        recientes = [
+            t for t in transacciones
+            if datetime.strptime(t["fecha"], "%Y-%m-%d %H:%M:%S") >= hace_un_ano
+        ]
 
+        if not recientes:
+            sock.send("No tienes transacciones en el último año.\n".encode())
+            return
+
+        # ---------- LISTADO RESUMEN ----------
+        mensaje = "\n--- Historial último año ---\n"
+        for i, op in enumerate(recientes, 1):
+            fecha = op["fecha"]
+            mensaje += f"[{i}] ({fecha})\n"
+        mensaje += "¿Desea ver más detalles de alguno? (0 = No): "
         sock.send(mensaje.encode())
+
+        # ---------- PREGUNTAR NÚMERO ----------
+        try:
+            eleccion = int(sock.recv(1024).decode().strip())
+        except ValueError:
+            sock.send("Entrada inválida.\n".encode())
+            return
+
+        if eleccion == 0:
+            return
+        if not (1 <= eleccion <= len(recientes)):
+            sock.send("Número fuera de rango.\n".encode())
+            return
+
+        op = recientes[eleccion - 1]  # transacción elegida
+
+        # ---------- DETALLE COMPLETO ----------
+        detalle = (
+            f"[{eleccion}] {op['tipo']} ({op['fecha']})\n"
+            f"* {op['producto']} [x{op.get('cantidad',1)}]\n"
+            f"Estado: {op['estado']}\n"
+        )
+        sock.send(detalle.encode())
 
     except Exception as e:
         print(f"[ERROR] historial_de_operaciones: {e}")
         sock.send("Ocurrió un error al cargar el historial.\n".encode())
+
 
 
 def comprar_cartas(sock, email,nombre): #carga catalogo.json, muestra cartas disponibles, permite elegir, actualiza stock y guarda en historial.
@@ -382,6 +439,8 @@ def contactar_ejecutivo(sock, email, nombre):
         "Has sido añadido a la cola de espera. "
         "Un ejecutivo te contactará pronto…\n".encode()
     )
+
+    
 
 
 

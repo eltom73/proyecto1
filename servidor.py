@@ -115,13 +115,17 @@ def Identificación(sock):
         sock.send("Ocurrió un error durante la autenticación. Conexión cerrada.\n".encode())
 
     finally:
-        sock.close()
         with mutex:
-            # Al cerrar la conexión, eliminar el cliente de la lista de conectados y de espera
             STATE["clientes_linea"].pop(email, None)
             STATE["clientes_espera"] = [
                 (s, e) for (s, e) in STATE["clientes_espera"] if e != email
             ]
+
+        # Cierra el socket *solo si no está conectado a un ejecutivo*
+        with mutex:
+            if sock not in STATE["conexiones"].values():
+                sock.close()
+
 
 
 #-----------------------------------------------------------------------------------
@@ -156,9 +160,9 @@ def manejar_ejecutivo(sock):
     datos = cargar_db(FILEPATH)  # Cargamos la BD una vez para info básica
 
     try:
-# ------------------------------------------------------------------
-# 1) *** HANDSHAKE DE LOGIN ***
-# ------------------------------------------------------------------
+        # ------------------------------------------------------------------
+        # 1) *** HANDSHAKE DE LOGIN ***
+        # ------------------------------------------------------------------
 
         # Primero recibimos el correo
         correo = sock.recv(1024).decode().strip()
@@ -174,25 +178,25 @@ def manejar_ejecutivo(sock):
         credenciales = ejecutivos[correo]
         clave_correcta = credenciales.get("contraseña")
 
-        # Bucle de intento de contraseña
-        sock.send("Ingrese su constraseña: ".encode()) # Primer intento
-        intentos = 1
-        while intentos <= 3:
+        # Bucle de intentos de contraseña
+        intentos = 0
+        while intentos < 3:
+            sock.send("Contraseña: ".encode())
             clave_ingresada = sock.recv(1024).decode().strip()
 
             if clave_ingresada == clave_correcta:
                 break
             else:
                 intentos += 1
-                if intentos <= 3:
-                    sock.send(f"Contraseña incorrecta. Intento {intentos - 1}/3\nContraseña: ".encode())
-
+                if intentos < 3:
+                    sock.send(f"Contraseña incorrecta. Intento {intentos}/3\n".encode())
 
         # Si falló 3 veces
         if clave_ingresada != clave_correcta:
             sock.send("Demasiados intentos fallidos. Conexión cerrada.\n".encode())
             sock.close()
             return
+
 
         # --- Login exitoso ------------------------------------------------
         nombre = credenciales.get("nombre", "Ejecutivo")
@@ -262,7 +266,7 @@ def manejar_ejecutivo(sock):
                 else:
                     sock.send("Uso: :publish [carta] [precio]\n".encode())
 
-            # -------------------- :history email --------------------------
+            # -------------------- :history --------------------------------
             elif msg.startswith(":history"):
                 partes = msg.split(maxsplit=1)
                 if len(partes) != 2:
@@ -270,16 +274,19 @@ def manejar_ejecutivo(sock):
                     continue
                 email_cliente = partes[1]
 
-                # Debe estar conectado y ser el cliente al que atiende (opcional)
+                # Verificar si el ejecutivo está conectado con ese cliente
                 with mutex:
-                    cliente_conectado = email_cliente in STATE["clientes_linea"]
-                    atendiendo_al_cliente = STATE["conexiones"].get(sock) == STATE["clientes_linea"].get(email_cliente)
+                    conexion = STATE["conexiones"].get(correo)
+                    if not conexion:
+                        sock.send("No estás conectado con ningún cliente.\n".encode())
+                        continue
 
-                if not cliente_conectado or not atendiendo_al_cliente:
-                    sock.send("Debes estar conectado con ese cliente para ver su historial.\n".encode())
-                    continue
+                    _, correo_cliente_conectado = conexion
+                    if correo_cliente_conectado != email_cliente:
+                        sock.send("Debes estar conectado con ese cliente para ver su historial.\n".encode())
+                        continue
 
-                # Recargar la BD y mostrar historial
+                # Mostrar historial completo
                 datos_hist = cargar_db(FILEPATH)
                 cliente = datos_hist["CLIENTES"].get(email_cliente, {})
                 historial = cliente.get("transacciones", [])
@@ -289,10 +296,14 @@ def manejar_ejecutivo(sock):
 
                 mensaje = f"Historial completo de {cliente.get('nombre', email_cliente)}:\n"
                 for op in historial:
-                    mensaje += (f" {op['tipo'].upper()} - {op['producto']} "
-                                f"(x{op.get('cantidad', 1)}) - "
-                                f"{op['fecha']} - Estado: {op['estado']}\n")
+                    mensaje += (
+                        f" {op['tipo'].upper()} - {op['producto']} "
+                        f"(x{op.get('cantidad', 1)}) - "
+                        f"{op['fecha']} - Estado: {op['estado']}\n"
+                    )
                 sock.send(mensaje.encode())
+
+
 
             # -------------------- :connect --------------------------------
             elif msg == ":connect":
@@ -301,15 +312,35 @@ def manejar_ejecutivo(sock):
                         sock.send("No hay clientes en espera.\n".encode())
                         continue
                     cli_sock, cli_email = STATE["clientes_espera"].pop(0)
-                    STATE["conexiones"][sock] = cli_sock   # Vinculamos el chat
+
+                    # Registrar conexión solo con socket y correo
+                    STATE["conexiones"][correo] = (cli_sock, cli_email)
 
                 nombre_cli = datos["CLIENTES"].get(cli_email, {}).get("nombre", cli_email)
                 cli_sock.send(f"Conectado con el ejecutivo {nombre}.\n".encode())
                 sock.send(f"Conectado con {nombre_cli} ({cli_email}).\n".encode())
 
+                print("[DEBUG] Estado de STATE después de :connect:")
+                print(" - conexiones:", STATE["conexiones"])
+                print(" - clientes_linea:", STATE["clientes_linea"])
+
             # -------------------- :exit -----------------------------------
             elif msg == ":exit":
+                with mutex:
+                    # Ver si estaba atendiendo a un cliente
+                    conexión = STATE["conexiones"].pop(correo, None)
+                    if conexión:
+                        cli_sock, _ = conexión
+                        try:
+                            cli_sock.send("El ejecutivo ha finalizado la sesión.\n".encode())
+                            cli_sock.close()
+                        except:
+                            pass
+
+                    # Remover al ejecutivo del estado
+                    STATE["ejecutivos_linea"].pop(correo, None)
                 break
+
 
             # -------------------- comando desconocido --------------------
             else:
