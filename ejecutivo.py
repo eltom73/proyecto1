@@ -23,6 +23,9 @@ def mostrar_menu():
 
 #------------------------------------------------------------------------------------
 #EJECUTIVO
+
+
+
 def recibir_mensajes(sock):
     """
     Lee todo lo que el servidor envía al ejecutivo y lo imprime

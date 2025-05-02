@@ -207,7 +207,7 @@ def chat_cliente_a_ejecutivo(sock_cliente, sock_ejecutivo, nombre_cli):
         except:
             pass
 
-       
+
 
 
 # ---------------------------------------------------------------
@@ -395,13 +395,9 @@ def manejar_ejecutivo(sock):
                 cli_sock.send(f"Conectado con el ejecutivo {nombre}.\n".encode())
                 sock.send(f"Conectado con {nombre_cli} ({cli_email}).\n".encode())
 
-                # 🔄 Lanza los hilos después
                 threading.Thread(target=chat_ejecutivo, args=(sock, cli_sock), daemon=True).start()
-                threading.Thread(
-                    target=chat_cliente_a_ejecutivo,
-                    args=(cli_sock, sock, nombre_cli),   # <- ahora con nombre_cli
-                    daemon=True
-                ).start()
+                threading.Thread(target=chat_cliente_a_ejecutivo, args=(cli_sock, sock, nombre_cli), daemon=True).start()
+
 
 
 
