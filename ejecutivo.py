@@ -1,4 +1,6 @@
 import socket
+import threading
+import sys
 
 
 def mostrar_menu():
@@ -21,6 +23,35 @@ def mostrar_menu():
 
 #------------------------------------------------------------------------------------
 #EJECUTIVO
+def recibir_mensajes(sock):
+    """
+    Lee todo lo que el servidor envía al ejecutivo y lo imprime
+    inmediatamente.  Si el servidor cierra la conexión, termina
+    el programa con un aviso elegante.
+    """
+    while True:
+        try:
+            datos = sock.recv(4096).decode()
+            if not datos:                       # conexión cerrada
+                print("\n[Conexión cerrada por el servidor]")
+                sock.close()
+                sys.exit(0)
+
+            # Imprimimos el bloque recibido tal cual llegó
+            # (podría ser “Cliente …”, una respuesta a :status,
+            #  un historial, etc.)
+            print(f"\n{datos}", end="", flush=True)
+
+            # Volvemos a mostrar el prompt del ejecutivo
+            # para que pueda seguir escribiendo comandos.
+            print("> ", end="", flush=True)
+
+        except OSError:
+            # El socket se cerró desde otro hilo (:exit) → salimos.
+            break
+        except Exception as e:
+            print(f"\n[Error receptor: {e}]")
+            break
 
 def terminal_ejecutivo():
     HOST = '127.0.0.1'
@@ -45,7 +76,10 @@ def terminal_ejecutivo():
             clave = input("")
             s.send(clave.encode())
         elif "Bienvenido/a" in respuesta or "Hola " in respuesta:
+            # ✅ Lanzar hilo para escuchar mensajes del cliente
+            threading.Thread(target=recibir_mensajes, args=(s,), daemon=True).start()
             break
+
         elif "Demasiados intentos" in respuesta or "Correo no encontrado" in respuesta or "Formato inválido" in respuesta:
             s.close()
             return
@@ -59,16 +93,21 @@ def terminal_ejecutivo():
 
         s.send(comando.encode())
 
+        # 🔽 NO hacemos ningún recv aquí.
+        # La respuesta (si hay) la mostrará recibir_mensajes()
+
         if comando == ":exit":
             print("Sesión cerrada.")
             break
-        else:
+
+            # Esperamos UNA respuesta del servidor (lista, catálogo, historial, …)
             respuesta = s.recv(4096).decode()
             print("Asistente:\n" + respuesta)
 
+        # ▸ Si NO empieza con ":", es texto de chat ↦ no bloqueamos con recv()
+        #   ──» El hilo `recibir_mensajes()` mostrará lo que llegue.
+
     s.close()
-
-
 
 if __name__ == "__main__":
     terminal_ejecutivo()

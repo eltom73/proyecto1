@@ -147,30 +147,66 @@ def guardar_db(path, db):
 
 def chat_ejecutivo(sock_ejec, sock_cliente):
     """
-    Maneja el chat en vivo entre ejecutivo y cliente.
+    Escucha mensajes del ejecutivo y reenvía al cliente.
     """
     try:
         while True:
-            mensaje = sock_ejec.recv(1024).decode()
-            if mensaje.startswith(":"):
-                break  # El ejecutivo usó un comando, salimos del chat
+            mensaje = sock_ejec.recv(1024).decode().strip()
+            if not mensaje:
+                break
+
+            if mensaje.startswith(":history"):
+                # Reenviamos el mensaje al propio socket del ejecutivo
+                sock_ejec.send((mensaje + "\n").encode())
+                continue
+
+            # elif mensaje.startswith(":buy"):  ESTA PARTE ES PARA CUANDO EL CLIENTE QUIERA VENDER CARTAS
+            #     sock_ejec.send((mensaje + "\n").encode())
+            #     continue
+
+            # Si es texto normal, lo mandamos al cliente
             sock_cliente.send(f"Ejecutivo: {mensaje}\n".encode())
+
     except Exception as e:
         print(f"[ERROR] chat_ejecutivo: {e}")
 
 
-def chat_cliente_a_ejecutivo(sock_cliente, sock_ejecutivo):
+
+
+def chat_cliente_a_ejecutivo(sock_cliente, sock_ejecutivo, nombre_cli):
     """
-    Hilo que escucha los mensajes del cliente y los reenvía al ejecutivo.
+    Escucha lo que escribe el cliente y lo reenvía al ejecutivo
+    con un prefijo claro para mostrarlo en consola.
     """
     try:
         while True:
+            # Espera datos del cliente
             mensaje = sock_cliente.recv(1024).decode()
-            if not mensaje:
+
+            # Si se cerró la conexión del cliente
+            if mensaje == "":
+                print(f"[SERVIDOR] Cliente {nombre_cli} se desconectó del chat.")
+                sock_ejecutivo.send(f"\n[INFO] Cliente {nombre_cli} se ha desconectado.\n".encode())
                 break
-            sock_ejecutivo.send(f"{mensaje}\n".encode())
+
+            # Mostrar y reenviar mensaje
+            print(f"[DEBUG] Mensaje de {nombre_cli}: {mensaje.strip()}")
+            sock_ejecutivo.send(f"Cliente {nombre_cli}: {mensaje}".encode())
+
+    except ConnectionResetError:
+        print(f"[SERVIDOR] Conexión perdida con cliente {nombre_cli}")
+        try:
+            sock_ejecutivo.send(f"\n[ERROR] Conexión perdida con {nombre_cli}.\n".encode())
+        except:
+            pass
+
     except Exception as e:
         print(f"[ERROR] chat_cliente_a_ejecutivo: {e}")
+        try:
+            sock_ejecutivo.send(f"\n[ERROR] Error recibiendo mensajes de {nombre_cli}.\n".encode())
+        except:
+            pass
+
        
 
 
@@ -235,6 +271,7 @@ def manejar_ejecutivo(sock):
         sock.send(mensaje_bienvenida.encode())
 
 
+
         # ------------------------------------------------------------------
         # 2) *** BUCLE PRINCIPAL DE COMANDOS DEL EJECUTIVO ***
         # ------------------------------------------------------------------
@@ -242,6 +279,11 @@ def manejar_ejecutivo(sock):
             msg = sock.recv(4096).decode().strip()
             if not msg:           # Fin de conexión TCP
                 break
+
+            # ⚠️ si el mensaje no empieza con ":", se asume que es mensaje de chat en vivo
+            if not msg.startswith(":"):
+                # Aquí no hacemos nada, porque `chat_ejecutivo` ya está enviando al cliente
+                continue
 
             # -------------------- :status ---------------------------------
             if msg == ":status":
@@ -355,7 +397,11 @@ def manejar_ejecutivo(sock):
 
                 # 🔄 Lanza los hilos después
                 threading.Thread(target=chat_ejecutivo, args=(sock, cli_sock), daemon=True).start()
-                threading.Thread(target=chat_cliente_a_ejecutivo, args=(cli_sock, sock), daemon=True).start()
+                threading.Thread(
+                    target=chat_cliente_a_ejecutivo,
+                    args=(cli_sock, sock, nombre_cli),   # <- ahora con nombre_cli
+                    daemon=True
+                ).start()
 
 
 

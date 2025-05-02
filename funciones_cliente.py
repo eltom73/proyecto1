@@ -423,18 +423,20 @@ def contactar_ejecutivo(sock, email, nombre):
         STATE["clientes_espera"].append((sock, email))
         print(f"[INFO] Cliente {nombre} añadido a la cola de espera")
 
-        # ─── NUEVO: Avisar a todos los ejecutivos conectados ───
-        for s_ejec in STATE["ejecutivos_linea"].values():
-            try:
-                s_ejec.send(f"El cliente {nombre} ({email}) se quiere conectar\n".encode())
-            except (BrokenPipeError, OSError):
-                pass
-
-    # Confirmación al cliente
+    # ✅ Confirmación al cliente (fuera del mutex por si hay problemas de red)
     sock.send(
         "Has sido añadido a la cola de espera. "
         "Un ejecutivo te contactará pronto…\n".encode()
     )
+
+    # 🔔 Avisar a todos los ejecutivos en línea (fuera del mutex)
+    with mutex:
+        for s_ejec in STATE["ejecutivos_linea"].values():
+            try:
+                s_ejec.send(f"🔔 El cliente {nombre} ({email}) se quiere conectar\n".encode())
+            except (BrokenPipeError, OSError):
+                continue
+
 
 def chat_con_ejecutivo(sock):
     """
