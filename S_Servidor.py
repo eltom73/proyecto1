@@ -70,11 +70,37 @@ def autenticar(sock, seccion):
     return None, None
 
 #============================================================================================================
+# 1. FUNCIÓN CAMBIAR CLAVE
+#============================================================================================================
+
+def cambiar_clave(sock, email):
+    try:
+        sock.send("Ingrese nueva contraseña: ".encode())
+        new1 = sock.recv(1024).decode().strip()
+        sock.send("Confirme nueva contraseña: ".encode())
+        new2 = sock.recv(1024).decode().strip()
+
+        if new1 != new2:
+            sock.send("No coinciden, operación cancelada.\n".encode())
+            return
+
+        with mutex:
+            with open(FILEPATH, "r+", encoding="utf-8") as f:
+                data = json.load(f)
+                data["CLIENTES"][email]["clave"] = new1
+                f.seek(0)
+                json.dump(data, f, indent=4)
+                f.truncate()
+
+        sock.send("✅ Contraseña cambiada con éxito.\n".encode())
+
+    except Exception as e:
+        print(f"[ERROR] cambiar_clave: {e}")
+        sock.send("⚠️ Error al cambiar la contraseña.\n".encode())
+
 #============================================================================================================
 # 2. FUNCIÓN HISTORIAL DE OPERACIONES
 #============================================================================================================
-#============================================================================================================
-from datetime import datetime, timedelta
 
 def historial_de_operaciones(sock, email):
     """
@@ -141,7 +167,228 @@ def historial_de_operaciones(sock, email):
         print(f"[ERROR] historial_de_operaciones: {e}")
         sock.send("Ocurrió un error al cargar el historial.\n".encode())
 
+#============================================================================================================
+# 3. FUNCIÓN COMPRAR CARTAS
+#============================================================================================================
 
+def comprar_cartas(sock, email, nombre):
+    try:
+        with mutex:
+            with open(FILEPATH, "r+", encoding="utf-8") as f:
+                data = json.load(f)
+                catalogo = data.get("PRODUCTOS")
+                if not catalogo or not isinstance(catalogo, dict):
+                    sock.send("Catálogo no disponible o malformado.\n".encode())
+                    return
+
+                mensaje = "\n--- Catálogo de cartas ---\n"
+                for i, (nombre_carta, detalles) in enumerate(catalogo.items(), 1):
+                    mensaje += f"{i}. {nombre_carta} - Precio: {detalles['precio']} - Stock: {detalles['stock']}\n"
+                sock.send(mensaje.encode())
+
+                sock.send("Elige el número de la carta que deseas comprar (0 = cancelar): ".encode())
+                try:
+                    seleccion = int(sock.recv(1024).decode().strip())
+                except ValueError:
+                    sock.send("Error: Ingrese un número válido.\n".encode())
+                    return
+
+                if seleccion == 0:
+                    sock.send("Compra cancelada.\n".encode())
+                    return
+
+                if seleccion < 1 or seleccion > len(catalogo):
+                    sock.send("Selección inválida.\n".encode())
+                    return
+
+                carta = list(catalogo.keys())[seleccion - 1]
+                detalles = catalogo[carta]
+
+                if detalles["stock"] <= 0:
+                    sock.send("No hay stock disponible para esta carta.\n".encode())
+                    return
+
+                sock.send(f"¿Confirmar compra de {carta} por {detalles['precio']}? (si/no): ".encode())
+                confirmacion = sock.recv(1024).decode().strip().lower()
+                if confirmacion != "si":
+                    sock.send("Compra cancelada.\n".encode())
+                    return
+
+                sock.send("¿Cuántas cartas desea comprar?: ".encode())
+                try:
+                    cantidad = int(sock.recv(1024).decode().strip())
+                except ValueError:
+                    sock.send("Cantidad inválida.\n".encode())
+                    return
+
+                if cantidad > detalles["stock"]:
+                    sock.send("No hay suficiente stock disponible.\n".encode())
+                    return
+
+                # Actualizar stock
+                detalles["stock"] -= cantidad
+
+                # Registrar transacción
+                transaccion = {
+                    "tipo": "compra",
+                    "producto": carta,
+                    "cantidad": cantidad,
+                    "precio": detalles["precio"],
+                    "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "estado": "envío pendiente"
+                }
+
+                cliente = data["CLIENTES"][email]
+                cliente.setdefault("transacciones", []).append(transaccion)
+
+                # Guardar
+                f.seek(0)
+                json.dump(data, f, indent=4)
+                f.truncate()
+
+                sock.send(f"✅ Compra exitosa: {cantidad}x {carta}.\n".encode())
+
+    except Exception as e:
+        print(f"[ERROR] comprar_cartas: {e}")
+        sock.send("⚠️ Error al procesar la compra.\n".encode())
+
+#============================================================================================================
+# 4. FUNCIÓN DEVOLVER CARTAS
+#============================================================================================================
+
+def devolver_cartas(sock, email, nombre):
+    try:
+        with mutex:
+            with open(FILEPATH, "r+", encoding="utf-8") as f:
+                data = json.load(f)
+
+                transacciones = data["CLIENTES"].get(email, {}).get("transacciones", [])
+                compras = [
+                    t for t in transacciones
+                    if t["tipo"] == "compra" and t["estado"] in ("envío pendiente", "envío confirmado")
+                ]
+
+                if not compras:
+                    sock.send("No tienes compras devolvibles registradas.\n".encode())
+                    return
+
+                mensaje = "\n--- Compras disponibles para devolución ---\n"
+                for i, compra in enumerate(compras, 1):
+                    mensaje += f"{i}. Producto: {compra['producto']}, Fecha: {compra['fecha']}, Estado: {compra['estado']}\n"
+                sock.send(mensaje.encode())
+
+                sock.send("Elige el número de la carta que deseas devolver (0 = cancelar): ".encode())
+                try:
+                    seleccion = int(sock.recv(1024).decode().strip())
+                except ValueError:
+                    sock.send("⚠️ Error: Ingrese un número válido.\n".encode())
+                    return
+
+                if seleccion == 0:
+                    sock.send("Devolución cancelada.\n".encode())
+                    return
+                if seleccion < 1 or seleccion > len(compras):
+                    sock.send("⚠️ Error: Selección fuera de rango.\n".encode())
+                    return
+
+                compra = compras[seleccion - 1]
+                carta = compra["producto"]
+
+                sock.send(f"¿Confirmar devolución de {carta}? (si/no): ".encode())
+                confirmacion = sock.recv(1024).decode().strip().lower()
+                if confirmacion != "si":
+                    sock.send("Devolución cancelada.\n".encode())
+                    return
+
+                sock.send("¿Cuántas cartas desea devolver?: ".encode())
+                try:
+                    cantidad = int(sock.recv(1024).decode().strip())
+                except ValueError:
+                    sock.send("⚠️ Cantidad inválida.\n".encode())
+                    return
+
+                data["PRODUCTOS"][carta]["stock"] += cantidad
+
+                nueva_transaccion = {
+                    "tipo": "devolución",
+                    "producto": carta,
+                    "cantidad": cantidad,
+                    "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "estado": "devuelto"
+                }
+
+                data["CLIENTES"][email].setdefault("transacciones", []).append(nueva_transaccion)
+
+                f.seek(0)
+                json.dump(data, f, indent=4)
+                f.truncate()
+
+                sock.send(f"✅ Devolución exitosa: {cantidad}x {carta}.\n".encode())
+
+    except Exception as e:
+        print(f"[ERROR] devolver_cartas: {e}")
+        sock.send("⚠️ Error al procesar la devolución.\n".encode())
+
+#============================================================================================================
+# 5. FUNCIÓN CONFIRMAR ENVÍO
+#============================================================================================================
+
+def confirmar_envio(sock, email, nombre):
+    try:
+        with mutex:
+            with open(FILEPATH, "r+", encoding="utf-8") as f:
+                data = json.load(f)
+                transacciones = data["CLIENTES"][email].get("transacciones", [])
+                pendientes = [
+                    t for t in transacciones
+                    if t["tipo"] == "compra" and t["estado"] == "envío pendiente"
+                ]
+
+                if not pendientes:
+                    sock.send("No tienes compras pendientes de confirmación.\n".encode())
+                    return
+
+                mensaje = "\n--- Compras pendientes de confirmación ---\n"
+                for i, compra in enumerate(pendientes, 1):
+                    mensaje += f"{i}. Producto: {compra['producto']}, Fecha: {compra['fecha']}, Estado: {compra['estado']}\n"
+                sock.send(mensaje.encode())
+
+                sock.send("Elige el número de la compra que deseas confirmar (0 = cancelar): ".encode())
+                try:
+                    seleccion = int(sock.recv(1024).decode().strip())
+                except ValueError:
+                    sock.send("⚠️ Error: Ingrese un número válido.\n".encode())
+                    return
+
+                if seleccion == 0:
+                    sock.send("Confirmación cancelada.\n".encode())
+                    return
+
+                if seleccion < 1 or seleccion > len(pendientes):
+                    sock.send("⚠️ Selección fuera de rango.\n".encode())
+                    return
+
+                compra = pendientes[seleccion - 1]
+                carta = compra["producto"]
+
+                sock.send(f"¿Confirmar recepción de {carta}? (si/no): ".encode())
+                confirmacion = sock.recv(1024).decode().strip().lower()
+                if confirmacion != "si":
+                    sock.send("Confirmación cancelada.\n".encode())
+                    return
+
+                compra["estado"] = "envío confirmado"
+                compra["fecha"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                f.seek(0)
+                json.dump(data, f, indent=4)
+                f.truncate()
+
+                sock.send(f"✅ Confirmación exitosa: recepción de {carta}.\n".encode())
+
+    except Exception as e:
+        print(f"[ERROR] confirmar_envio: {e}")
+        sock.send("⚠️ Error al procesar la confirmación.\n".encode())
 
 
 
@@ -180,38 +427,65 @@ def handle_cliente(conn, addr):
 
         # Opción 1: Cambio de contraseña
         if opt == '1':
-            conn.send("Ingrese nueva contraseña: ".encode())
-            new1 = conn.recv(1024).decode().strip()
-            conn.send("Confirme nueva contraseña: ".encode())
-            new2 = conn.recv(1024).decode().strip()
-            if new1 == new2:
-                # actualizar JSON como antes…
-                with mutex:
-                    data = json.load(open(FILEPATH, encoding='utf-8'))
-                    data['CLIENTES'][email]['clave'] = new1
-                    with open(FILEPATH, 'w', encoding='utf-8') as f:
-                        json.dump(data, f, indent=4)
-                conn.send("Contraseña cambiada con éxito.\n".encode())
-            else:
-                conn.send("No coinciden, operación cancelada.\n".encode())
-
+            cambiar_clave(conn, email)
+        
          # Opción 2: Historial de operaciones
         elif opt == '2':
             historial_de_operaciones(conn, email)
 
+        # Opción 3: Catálogo de productos / Comprar productos
+        elif opt == '3':
+            comprar_cartas(conn, email, nombre)
+
+        # Opción 4: Solicitar devolución
+        elif opt == '4':
+            devolver_cartas(conn, email, nombre)
+
+        # Opción 5: Confirmar envío
+        elif opt == '5':
+            confirmar_envio(conn, email, nombre)
 
         # Opción 6: Contactarse con ejecutivo
         elif opt == '6':
             with mutex:
                 clientes_espera.append((conn, email))
+
+                # Cargar nombre del cliente
+                with open(FILEPATH, encoding='utf-8') as f:
+                    data = json.load(f)
+                nombre_cli = data["CLIENTES"].get(email, {}).get("nombre", email)
+
+                # Avisar a todos los ejecutivos conectados
+                alerta = f"\n⚠️ Nuevo cliente en espera: {nombre_cli} (correo: {email})\n"
+                for sock_ej in STATE["ejecutivos_linea"].values():
+                    try:
+                        sock_ej.send(alerta.encode())
+                    except:
+                        pass  # en caso de que el socket se haya cerrado o esté caído
+
             conn.send("Quedaste en cola, espera a un ejecutivo...\n".encode())
+
             # espera emparejamiento
             while True:
                 with mutex:
                     current = list(parejas.values())
-                if any(conn is c for c, _ in current):
-                    conn.send("Conectado a ejecutivo. Empieza a chatear.\n".encode())
-                    break
+                for ej, (cli, _) in parejas.items():
+                    if cli is conn:
+                        # Obtener nombre del ejecutivo
+                        with open(FILEPATH, encoding='utf-8') as f:
+                            data = json.load(f)
+                        for correo_ej, datos in data["EJECUTIVOS"].items():
+                            if STATE["ejecutivos_linea"].get(correo_ej) is ej:
+                                nombre_ej = datos.get("nombre", correo_ej)
+                                break
+                        else:
+                            nombre_ej = "desconocido"
+                        conn.send(f"Conectado a ejecutivo {nombre_ej}. Empieza a chatear.\n".encode())
+                        break  # <- rompe el for
+                else:
+                    continue  # si no encontró pareja, sigue esperando
+                break  # <- rompe el while si encontró pareja
+
             # chat con ejecutivo
             while True:
                 msg = conn.recv(1024)
@@ -245,7 +519,63 @@ def handle_cliente(conn, addr):
     conn.close()
 
 
+#============================================================================================================
+# FUNCIÓN PARA :history
+#============================================================================================================
 
+def reunir_historial_cliente(cli_email):
+    """
+    Devuelve (texto_historial, nombre_cliente) listos para enviar.
+    Reúne:
+      • Cambios de contraseña
+      • Transacciones (compras y devoluciones)
+      • Actividades registradas en data["Ingresados"]
+    """
+    with open(FILEPATH, encoding='utf-8') as f:
+        data = json.load(f)
+
+    cli_data  = data["CLIENTES"].get(cli_email, {})
+    nombre_cli = cli_data.get("nombre", cli_email)
+
+    # 1. Cambios de contraseña
+    cambios = cli_data.get("cambios de contraseña", [])
+    txt_cambios = "\n--- Cambios de contraseña ---\n"
+    if cambios:
+        for c in cambios:
+            txt_cambios += f"* {c['fecha']}  →  nueva clave: {c['nueva']}\n"
+    else:
+        txt_cambios += "Sin cambios registrados.\n"
+
+    # 2. Transacciones (compras / devoluciones)
+    trans = cli_data.get("transacciones", [])
+    txt_trans = "\n--- Transacciones ---\n"
+    if trans:
+        for t in trans:
+            txt_trans += (f"* {t['fecha']}  [{t['tipo']}] {t['producto']}  "
+                          f"x{t.get('cantidad',1)}  estado: {t['estado']}\n")
+    else:
+        txt_trans += "Sin transacciones registradas.\n"
+
+    # 3. Actividad en “Ingresados”
+    logs = [log for log in data.get("Ingresados", [])
+            if nombre_cli in log.get("acción", "")]
+    txt_logs = "\n--- Actividad general ---\n"
+    if logs:
+        for l in logs:
+            txt_logs += f"* {l.get('timestamp','?')}  – {l.get('acción','')}\n"
+    else:
+        txt_logs += "Sin registros de actividad.\n"
+        
+    historial = (f"\n========== Historial de {nombre_cli} ==========\n"
+                 f"{txt_cambios}{txt_trans}{txt_logs}"
+                 "==============================================\n")
+    return historial, nombre_cli
+
+
+
+# =========================================================================================================
+# FUNCIÓN PRINCIPAL DEL EJECUTIVO
+# =========================================================================================================
 def handle_ejecutivo(conn, addr):
     conn.send(
         "¡Bienvenido a la plataforma de servicio al cliente de la tienda TC5G!\n"
@@ -262,10 +592,12 @@ def handle_ejecutivo(conn, addr):
         raw = conn.recv(1024)
         if not raw:
             continue
-        line = raw.decode().strip()
-        lower = line.lower()
+        line   = raw.decode().strip()
+        lower  = line.lower()
 
-        # --- comando :connect inicia chat ---
+        # ------------------------------------------------------------------ #
+        # :connect  →   empieza un chat uno-a-uno con el cliente en espera
+        # ------------------------------------------------------------------ #
         if lower == ':connect':
             with mutex:
                 if not clientes_espera:
@@ -273,25 +605,54 @@ def handle_ejecutivo(conn, addr):
                     continue
                 cli_conn, cli_email = clientes_espera.pop(0)
                 parejas[conn] = (cli_conn, cli_email)
-            conn.send(f"Conectado a cliente {cli_email}\n".encode())
 
-            # bucle de chat hasta :disconnect
-            while True:
-                chat_raw = conn.recv(1024)
-                if not chat_raw:
-                    break
-                msg = chat_raw.decode().strip()
-                if msg.lower() == ':disconnect':
-                    with mutex:
-                        parejas.pop(conn, None)
-                    conn.send("Chat terminado.\n".encode())
-                    cli_conn.send("El ejecutivo se desconectó.\n".encode())
-                    break
-                # reenviar al cliente
-                cli_conn.send(f"Ejecutivo: {msg}\n".encode())
-            continue
+                # obtener nombre del cliente
+                with open(FILEPATH, encoding='utf-8') as f:
+                    data = json.load(f)
+                cli_nombre = data["CLIENTES"].get(cli_email, {}).get("nombre", cli_email)
 
-        # --- resto de comandos “colon” ---
+            conn.send(f"Conectado a cliente {cli_nombre} (correo: {cli_email})\n".encode())
+
+        # -------------- BUCLE DE CHAT ACTIVO --------------
+        while True:
+            chat_raw = conn.recv(1024)
+            if not chat_raw:
+                break
+
+            msg_original = chat_raw.decode()
+            cmd = msg_original.lower().strip()        # ← normalizamos una vez
+
+            # ---- 1. Desconexión explícita ----
+            if cmd == ':disconnect':
+                with mutex:
+                    parejas.pop(conn, None)
+                conn.send("Chat terminado.\n".encode())
+                cli_conn.send("El ejecutivo se desconectó.\n".encode())
+                break
+
+            # ---- 2. HISTORIAL DEL CLIENTE ----
+            elif cmd == ':history':
+                try:
+                    historial, _ = reunir_historial_cliente(cli_email)
+                    conn.send(historial.encode())
+                    conn.send("¿Enviar historial al cliente? (1 = sí / 0 = no): ".encode())
+                    resp = conn.recv(1024).decode().strip()
+                    if resp == '1':
+                        cli_conn.send(historial.encode())
+                        conn.send("Historial enviado al cliente.\n".encode())
+                    else:
+                        conn.send("Historial NO enviado al cliente.\n".encode())
+                except Exception as e:
+                    conn.send(f"⚠️ Error al obtener historial: {e}\n".encode())
+                continue  # no reenvía el comando al cliente
+
+            # ---- 3. Cualquier otro mensaje se reenvía ----
+            cli_conn.send(f"Ejecutivo: {msg_original}\n".encode())
+
+
+        # ------------------------------------------------------------------ #
+        # RESTO DE COMANDOS “COLON” (fuera de chat)
+        # ------------------------------------------------------------------ #
         if lower == ':status':
             conn.send(f"Clientes en espera: {len(clientes_espera)}\n".encode())
 
@@ -306,7 +667,7 @@ def handle_ejecutivo(conn, addr):
                 conn.send(f" * {prod}: stock={info['stock']} precio={info['precio']}\n".encode())
 
         elif lower == ':disconnect':
-            # en caso de llamarlo fuera de chat
+            # llamado fuera de un chat activo
             conn.send("No estabas conectado a ningún cliente.\n".encode())
 
         elif lower == ':exit':
@@ -317,6 +678,7 @@ def handle_ejecutivo(conn, addr):
             conn.send(f"Comando '{line}' no implementado.\n".encode())
 
     conn.close()
+# =========================================================================================================
 
 
 def main():

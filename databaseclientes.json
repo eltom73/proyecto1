@@ -51,6 +51,29 @@
                     "precio": 2.5,
                     "fecha": "2023-12-05 14:21:00",
                     "estado": "env\u00c3\u00ado confirmado"
+                },
+                {
+                    "tipo": "compra",
+                    "producto": "Charizard Ex",
+                    "cantidad": 8,
+                    "precio": 3.0,
+                    "fecha": "2025-05-05 03:20:12",
+                    "estado": "env\u00edo confirmado"
+                },
+                {
+                    "tipo": "devoluci\u00f3n",
+                    "producto": "Charizard Ex",
+                    "cantidad": 8,
+                    "fecha": "2025-05-05 03:17:05",
+                    "estado": "devuelto"
+                },
+                {
+                    "tipo": "compra",
+                    "producto": "Charizard Ex",
+                    "cantidad": 2,
+                    "precio": 3.0,
+                    "fecha": "2025-05-05 03:21:58",
+                    "estado": "env\u00edo confirmado"
                 }
             ],
             "cambios de contrase\u00c3\u00b1a": [
@@ -104,7 +127,7 @@
     },
     "PRODUCTOS": {
         "Charizard Ex": {
-            "stock": 20,
+            "stock": 18,
             "precio": 3.0
         },
         "Pikachu Ex": {
@@ -332,6 +355,98 @@
         {
             "timestamp": "05/05/2025 03:05:00",
             "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "05/05/2025 03:08:21",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "05/05/2025 03:10:07",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "05/05/2025 03:13:08",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "05/05/2025 03:16:41",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "05/05/2025 03:19:08",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "05/05/2025 03:20:52",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "05/05/2025 03:21:43",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "05/05/2025 03:29:41",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "05/05/2025 03:30:06",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "05/05/2025 03:30:46",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "05/05/2025 03:31:00",
+            "acci\u00f3n": "Ejecutivo Lionel Messi conectado"
+        },
+        {
+            "timestamp": "05/05/2025 03:42:43",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "05/05/2025 03:42:54",
+            "acci\u00f3n": "Ejecutivo Lionel Messi conectado"
+        },
+        {
+            "timestamp": "05/05/2025 03:47:36",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "05/05/2025 03:47:49",
+            "acci\u00f3n": "Ejecutivo Lionel Messi conectado"
+        },
+        {
+            "timestamp": "05/05/2025 04:14:02",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "05/05/2025 04:14:13",
+            "acci\u00f3n": "Ejecutivo Lionel Messi conectado"
+        },
+        {
+            "timestamp": "05/05/2025 04:20:21",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "05/05/2025 04:20:36",
+            "acci\u00f3n": "Ejecutivo Lionel Messi conectado"
+        },
+        {
+            "timestamp": "05/05/2025 04:25:54",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "05/05/2025 04:26:07",
+            "acci\u00f3n": "Ejecutivo Lionel Messi conectado"
+        },
+        {
+            "timestamp": "05/05/2025 04:30:10",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "05/05/2025 04:30:48",
+            "acci\u00f3n": "Ejecutivo Lionel Messi conectado"
         }
     ],
     "Cambios": [
