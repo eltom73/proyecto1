@@ -1,7 +1,7 @@
 import socket
 import threading
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Carga de base de datos
 FILEPATH = 'databaseclientes.json'
@@ -565,7 +565,7 @@ def reunir_historial_cliente(cli_email):
             txt_logs += f"* {l.get('timestamp','?')}  – {l.get('acción','')}\n"
     else:
         txt_logs += "Sin registros de actividad.\n"
-        
+
     historial = (f"\n========== Historial de {nombre_cli} ==========\n"
                  f"{txt_cambios}{txt_trans}{txt_logs}"
                  "==============================================\n")
