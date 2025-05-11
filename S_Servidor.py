@@ -634,6 +634,13 @@ def gestionar_cartas(sock, linea, cli_email):
                     }
                     data["CLIENTES"][cli_email].setdefault("transacciones", []).append(trans)
 
+                    # 📨 Enviar mensaje al cliente si está conectado
+                    cli_sock = STATE["clientes_linea"].get(cli_email)
+                    if cli_sock:
+                        cli_sock.send(
+                            f"📨 Tu carta '{carta}' fue comprada por ${precio:.2f} y añadida al catálogo.\n".encode()
+                        )
+                        
                 # Guardar cambios
                 f.seek(0)
                 json.dump(data, f, indent=4)
@@ -748,8 +755,30 @@ def handle_ejecutivo(conn, addr):
         # ------------------------------------------------------------------ #
         # RESTO DE COMANDOS “COLON” (fuera de chat)
         # ------------------------------------------------------------------ #
-        if lower == ':status':
-            conn.send(f"Clientes en espera: {len(clientes_espera)}\n".encode())
+        elif lower == ':status':
+            with mutex:
+                total_conectados = len(STATE['clientes_linea'])
+                conn.send(f"🟢 Clientes conectados actualmente: {total_conectados}\n".encode())
+
+                with open(FILEPATH, encoding='utf-8') as f:
+                    data = json.load(f)
+
+                if total_conectados > 0:
+                    conn.send("Clientes conectados:\n".encode())
+                    for correo, sock in STATE["clientes_linea"].items():
+                        nombre = data["CLIENTES"].get(correo, {}).get("nombre", correo)
+                        conn.send(f"- {nombre} ({correo})\n".encode())
+                else:
+                    conn.send("No hay clientes conectados.\n".encode())
+
+                if clientes_espera:
+                    conn.send("\n⏳ Clientes en espera:\n".encode())
+                    for _, correo in clientes_espera:
+                        nombre = data["CLIENTES"].get(correo, {}).get("nombre", correo)
+                        conn.send(f"- {nombre} ({correo})\n".encode())
+                else:
+                    conn.send("\nNo hay clientes en espera.\n".encode())
+
 
         elif lower == ':details':
             conn.send("Clientes en espera:\n".encode())

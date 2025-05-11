@@ -74,6 +74,14 @@
                     "precio": 3.0,
                     "fecha": "2025-05-05 03:21:58",
                     "estado": "env\u00edo confirmado"
+                },
+                {
+                    "tipo": "venta",
+                    "producto": "Caterpie",
+                    "cantidad": 1,
+                    "precio": 3.0,
+                    "fecha": "2025-05-11 03:35:02",
+                    "estado": "vendido"
                 }
             ],
             "cambios de contrase\u00c3\u00b1a": [
@@ -143,7 +151,7 @@
             "precio": 2.5
         },
         "Caterpie": {
-            "stock": 40,
+            "stock": 41,
             "precio": 1.5
         }
     },
@@ -454,6 +462,22 @@
         },
         {
             "timestamp": "05/05/2025 04:40:49",
+            "acci\u00f3n": "Ejecutivo Lionel Messi conectado"
+        },
+        {
+            "timestamp": "11/05/2025 03:17:01",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "11/05/2025 03:17:17",
+            "acci\u00f3n": "Ejecutivo Lionel Messi conectado"
+        },
+        {
+            "timestamp": "11/05/2025 03:33:54",
+            "acci\u00f3n": "Cliente AlexisSanchez conectado"
+        },
+        {
+            "timestamp": "11/05/2025 03:34:10",
             "acci\u00f3n": "Ejecutivo Lionel Messi conectado"
         }
     ],
