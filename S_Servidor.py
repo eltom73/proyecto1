@@ -498,6 +498,10 @@ def handle_cliente(conn, addr):
                 for ej, (cli, _) in parejas.items():
                     if cli is conn:
                         ej.send(f"Cliente: {txt}\n".encode())
+                        break
+                else:
+                    # Si el ejecutivo ya no está emparejado → salir del bloque para volver al menú 
+                    break
 
         # Opción 7: Salir
         elif opt == '7':
@@ -509,7 +513,7 @@ def handle_cliente(conn, addr):
             conn.send(f"Opción {opt} no implementada.\n".encode())
 
         # Pregunta después de cada operación
-        conn.send("Asistente: ¿Desea realizar otra operación? (0=no) ".encode())
+        conn.send("Asistente: ¿Desea realizar otra operación? (1 = si, 0 = no) ".encode())
         again = conn.recv(1024)
         if not again or again.decode().strip() == '0':
             conn.send("Sesión finalizada. ¡Hasta luego!\n".encode())
@@ -720,7 +724,7 @@ def handle_ejecutivo(conn, addr):
                     with mutex:
                         parejas.pop(conn, None)
                     conn.send("Chat terminado.\n".encode())
-                    cli_conn.send("El ejecutivo se desconectó.\n".encode())
+                    cli_conn.send("El ejecutivo se desconectó. Presione Enter para continuar.\n".encode())
                     break
 
                 # ---- 2. HISTORIAL DEL CLIENTE ----
@@ -755,15 +759,18 @@ def handle_ejecutivo(conn, addr):
         # ------------------------------------------------------------------ #
         # RESTO DE COMANDOS “COLON” (fuera de chat)
         # ------------------------------------------------------------------ #
+
         elif lower == ':status':
             with mutex:
-                total_conectados = len(STATE['clientes_linea'])
-                conn.send(f"🟢 Clientes conectados actualmente: {total_conectados}\n".encode())
+                total_clientes = len(STATE['clientes_linea'])
+                total_ejecutivos = len(STATE['ejecutivos_linea'])
 
                 with open(FILEPATH, encoding='utf-8') as f:
                     data = json.load(f)
 
-                if total_conectados > 0:
+                # --- Clientes conectados ---
+                conn.send(f"🟢 Clientes conectados actualmente: {total_clientes}\n".encode())
+                if total_clientes > 0:
                     conn.send("Clientes conectados:\n".encode())
                     for correo, sock in STATE["clientes_linea"].items():
                         nombre = data["CLIENTES"].get(correo, {}).get("nombre", correo)
@@ -771,6 +778,7 @@ def handle_ejecutivo(conn, addr):
                 else:
                     conn.send("No hay clientes conectados.\n".encode())
 
+                # --- Clientes en espera ---
                 if clientes_espera:
                     conn.send("\n⏳ Clientes en espera:\n".encode())
                     for _, correo in clientes_espera:
@@ -778,6 +786,17 @@ def handle_ejecutivo(conn, addr):
                         conn.send(f"- {nombre} ({correo})\n".encode())
                 else:
                     conn.send("\nNo hay clientes en espera.\n".encode())
+
+                # --- Ejecutivos conectados ---
+                conn.send(f"\n👨‍💼 Ejecutivos conectados actualmente: {total_ejecutivos}\n".encode())
+                if total_ejecutivos > 0:
+                    conn.send("Ejecutivos conectados:\n".encode())
+                    for correo, sock in STATE["ejecutivos_linea"].items():
+                        nombre = data["EJECUTIVOS"].get(correo, {}).get("nombre", correo)
+                        estado = "🟠 ocupado" if sock in parejas else "🟢 disponible"
+                        conn.send(f"- {nombre} ({correo}) {estado}\n".encode())
+                else:
+                    conn.send("No hay ejecutivos conectados.\n".encode())
 
 
         elif lower == ':details':
