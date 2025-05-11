@@ -573,6 +573,89 @@ def reunir_historial_cliente(cli_email):
 
 
 
+#============================================================================================================
+# FUNCIÓN PARA :publish y :buy
+#============================================================================================================
+
+def gestionar_cartas(sock, linea, cli_email):
+    """
+    Procesa los comandos:
+     - :publish [carta] [precio]
+     - :buy     [carta] [precio]
+    En :buy, si la carta existe solo aumenta stock; si no existe, la añade con precio+3.
+    """
+    parts = linea.split()
+    if len(parts) != 3:
+        sock.send(f"Uso: {parts[0]} [carta] [precio]\n".encode())
+        return
+
+    cmd, carta, precio_str = parts
+    cmd = cmd.lower()
+    try:
+        precio = float(precio_str)
+    except ValueError:
+        sock.send("⚠️ Precio inválido. Debe ser un número.\n".encode())
+        return
+
+    try:
+        with mutex:
+            with open(FILEPATH, 'r+', encoding='utf-8') as f:
+                data = json.load(f)
+                productos = data.setdefault("PRODUCTOS", {})
+
+                if cmd == ':publish':
+                    # Igual lógica que antes para publish
+                    if carta in productos:
+                        productos[carta]["stock"] += 1
+                        precio_catalogo = productos[carta]["precio"]
+                    else:
+                        productos[carta] = {"precio": precio, "stock": 1}
+                        precio_catalogo = precio
+
+                else:  # cmd == ':buy'
+                    if carta in productos:
+                        # Solo sumar stock, no tocar precio
+                        productos[carta]["stock"] += 1
+                        precio_catalogo = productos[carta]["precio"]
+                    else:
+                        # Agregar con precio_comprado + 3
+                        precio_nuevo = precio + 3
+                        productos[carta] = {"precio": precio_nuevo, "stock": 1}
+                        precio_catalogo = precio_nuevo
+
+                    # Registrar la venta en el historial del cliente
+                    trans = {
+                        "tipo": "venta",
+                        "producto": carta,
+                        "cantidad": 1,
+                        "precio": precio,
+                        "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "estado": "vendido"
+                    }
+                    data["CLIENTES"][cli_email].setdefault("transacciones", []).append(trans)
+
+                # Guardar cambios
+                f.seek(0)
+                json.dump(data, f, indent=4)
+                f.truncate()
+
+        # Mensaje de confirmación
+        if cmd == ':publish':
+            sock.send(
+                f"✅ Carta '{carta}' publicada con precio {precio_catalogo:.2f} y stock {productos[carta]['stock']}.\n"
+                .encode()
+            )
+        else:
+            sock.send(
+                f"✅ Carta '{carta}' comprada al cliente por {precio:.2f}. Precio catálogo ahora {precio_catalogo:.2f}, stock {productos[carta]['stock']}.\n"
+                .encode()
+            )
+
+    except Exception as e:
+        sock.send(f"⚠️ Error al procesar {cmd}: {e}\n".encode())
+
+
+
 # =========================================================================================================
 # FUNCIÓN PRINCIPAL DEL EJECUTIVO
 # =========================================================================================================
@@ -585,6 +668,9 @@ def handle_ejecutivo(conn, addr):
     if not email:
         conn.close()
         return
+    
+    cli_conn = None
+    cli_email = None
 
     conn.send(f"Hola {nombre}, hay {len(clientes_espera)} clientes en espera.\n".encode())
 
@@ -614,40 +700,49 @@ def handle_ejecutivo(conn, addr):
             conn.send(f"Conectado a cliente {cli_nombre} (correo: {cli_email})\n".encode())
 
         # -------------- BUCLE DE CHAT ACTIVO --------------
-        while True:
-            chat_raw = conn.recv(1024)
-            if not chat_raw:
-                break
+            while True:
+                chat_raw = conn.recv(1024)
+                if not chat_raw:
+                    break
 
-            msg_original = chat_raw.decode()
-            cmd = msg_original.lower().strip()        # ← normalizamos una vez
+                msg_original = chat_raw.decode()
+                cmd = msg_original.lower().strip()        # ← normalizamos una vez
 
-            # ---- 1. Desconexión explícita ----
-            if cmd == ':disconnect':
-                with mutex:
-                    parejas.pop(conn, None)
-                conn.send("Chat terminado.\n".encode())
-                cli_conn.send("El ejecutivo se desconectó.\n".encode())
-                break
+                # ---- 1. Desconexión explícita ----
+                if cmd == ':disconnect':
+                    with mutex:
+                        parejas.pop(conn, None)
+                    conn.send("Chat terminado.\n".encode())
+                    cli_conn.send("El ejecutivo se desconectó.\n".encode())
+                    break
 
-            # ---- 2. HISTORIAL DEL CLIENTE ----
-            elif cmd == ':history':
-                try:
-                    historial, _ = reunir_historial_cliente(cli_email)
-                    conn.send(historial.encode())
-                    conn.send("¿Enviar historial al cliente? (1 = sí / 0 = no): ".encode())
-                    resp = conn.recv(1024).decode().strip()
-                    if resp == '1':
-                        cli_conn.send(historial.encode())
-                        conn.send("Historial enviado al cliente.\n".encode())
-                    else:
-                        conn.send("Historial NO enviado al cliente.\n".encode())
-                except Exception as e:
-                    conn.send(f"⚠️ Error al obtener historial: {e}\n".encode())
-                continue  # no reenvía el comando al cliente
+                # ---- 2. HISTORIAL DEL CLIENTE ----
+                elif cmd == ':history':
+                    try:
+                        historial, _ = reunir_historial_cliente(cli_email)
+                        conn.send(historial.encode())
+                        conn.send("¿Enviar historial al cliente? (1 = sí / 0 = no): ".encode())
+                        resp = conn.recv(1024).decode().strip()
+                        if resp == '1':
+                            cli_conn.send(historial.encode())
+                            conn.send("Historial enviado al cliente.\n".encode())
+                        else:
+                            conn.send("Historial NO enviado al cliente.\n".encode())
+                    except Exception as e:
+                        conn.send(f"⚠️ Error al obtener historial: {e}\n".encode())
+                    continue  # no reenvía el comando al cliente
 
-            # ---- 3. Cualquier otro mensaje se reenvía ----
-            cli_conn.send(f"Ejecutivo: {msg_original}\n".encode())
+                # ---- 3. Operaciones del cliente ----
+                elif cmd == ':operations':
+                    pass # no implementado
+
+                # ---- 3. Comprar carta al cliente ----
+                elif cmd.startswith(':buy'):
+                    gestionar_cartas(conn, msg_original, cli_email)
+
+                # ---- 4. Cualquier otro mensaje se reenvía ----
+                else:
+                    cli_conn.send(f"Ejecutivo: {msg_original}\n".encode())
 
 
         # ------------------------------------------------------------------ #
@@ -662,9 +757,18 @@ def handle_ejecutivo(conn, addr):
                 conn.send(f" - {e}\n".encode())
 
         elif lower == ':catalogue':
+            # volvemos a leer la base de datos del disco
+            with open(FILEPATH, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            productos = data.get("PRODUCTOS", {})
+
             conn.send("Catálogo de productos:\n".encode())
-            for prod, info in DB.get('PRODUCTOS', {}).items():
+            for prod, info in productos.items():
                 conn.send(f" * {prod}: stock={info['stock']} precio={info['precio']}\n".encode())
+
+        elif lower.startswith(':publish'):
+            gestionar_cartas(conn, line, cli_email)
+            
 
         elif lower == ':disconnect':
             # llamado fuera de un chat activo
